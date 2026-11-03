@@ -20,10 +20,12 @@ It adds two entries under *Options > Mods*, and you can turn each one on or off 
 
 Chat commands: `/wp add <name>`, `/wp list`, `/wp del <name or number>`, `/wp clear`
 
-## ayynoxs weltkarte (world map)
-- Saves every chunk you have seen, separately for each world, server and dimension
+## ayynoxs world map
+- Saves every chunk you have seen, separately for each world, server, dimension and layer
   (`horizon-mods/.horizon-mod-data/ayynoxs_worldmap/`)
-- In the Nether, it draws the terrain below the bedrock roof
+- **Layers like the minimap:** under the open sky you see the surface. In a cave, under a roof or in the Nether,
+  you see the floor at your head height, with walls cut there. Cave layers are stored in 16-block bands, and the
+  title bar shows which layer is open.
 - Shows waypoints and your arrow, the coordinates and height under the cursor, and an optional chunk grid
 
 | Key | Action |
@@ -35,10 +37,13 @@ Chat commands: `/wp add <name>`, `/wp list`, `/wp del <name or number>`, `/wp cl
 | `B` | Set a waypoint at the cursor |
 | `Esc` | Close |
 
-The in-game text is in German for now.
+## Languages
+The mods start in **English**. You can switch to **Deutsch, Français, Italiano or Русский** with the *Language*
+button on either mod's settings page; both mods share the choice. The settings pages, the HUD, the map and chat
+messages switch right away. The names in the *Options > Mods* list switch after a restart.
 
 ## Install
-1. Download `ayynoxs_map_pack-0.1.0.hnmod` from the
+1. Download `ayynoxs_map_pack-0.2.0.hnmod` from the
    [releases](https://github.com/DenoxyYT/ayynoxs-map-pack/releases).
 2. Install it on the **Mods** page of the Horizon launcher.
 3. Click **Build** and confirm with "I trust these mods: build".
@@ -50,7 +55,7 @@ Native mods run as native code with your user's full permissions, so only build 
    ```powershell
    powershell -ExecutionPolicy Bypass -File pack.ps1
    ```
-   This writes `dist/ayynoxs_map_pack-0.1.0.hnmod`.
+   This writes `dist/ayynoxs_map_pack-0.2.0.hnmod`.
 2. Install that file in the launcher as above, or build straight from the source folder:
    ```powershell
    horizon-launcher native-build mixins/ayynoxs_map_pack --trust-native-code
@@ -63,11 +68,10 @@ Native mods run as native code with your user's full permissions, so only build 
 - Map files are named `r.X.Z.amr`. Each holds 32×32 chunks, with 1 byte of colour and 2 bytes of height per block column.
 - The scan takes at most 1.5 ms per frame. Chunks near the player are scanned again after blocks change.
 
-## Ideas for 0.2
+## Ideas for later
 - Waypoints in the 3D world (beam and distance)
 - An entity radar (players and mobs) on the minimap
-- A cave mode for the world map, and a biome display
-- English in-game text
+- Browsing other cave layers on the world map, and a biome display
 - Drawing the world map as a GPU texture instead of rectangles, to stay smooth when zoomed far out
 
 ## License

@@ -5,7 +5,7 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $id = 'ayynoxs_map_pack'
-$version = '0.1.0'
+$version = '0.2.0'
 $root = $PSScriptRoot
 $bundle = Join-Path $root "mixins\$id"
 $dist = Join-Path $root 'dist'

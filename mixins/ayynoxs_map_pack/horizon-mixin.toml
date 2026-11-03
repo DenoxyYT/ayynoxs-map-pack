@@ -1,7 +1,7 @@
-# ayynoxs map pack: Minimap + Weltkarte for Horizon.
+# ayynoxs map pack: minimap + world map for Horizon.
 [mod]
 id = "ayynoxs_map_pack"
-version = "0.1.0"
+version = "0.2.0"
 priority = 100
 
 # The world map uses the Advancements screen's slot and the server address,
@@ -24,6 +24,7 @@ kind = "HEAD"
 target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
 helper = "list.rs"
 bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
   { name = "mods", ty = "&mut Vec<crate::game::native_hooks::NativeMod>", value = "&mut *mods" },
 ]
 

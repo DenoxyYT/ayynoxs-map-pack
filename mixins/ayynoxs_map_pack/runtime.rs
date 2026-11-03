@@ -1,6 +1,6 @@
 // ayynoxs map pack: a minimap with waypoints over Horizon's own minimap,
 // and a world map of every chunk the player has seen, kept on disk per
-// world and dimension. Both share the waypoints.
+// world, dimension and layer. Both share the waypoints and the language.
 //
 // Everything runs on the window's thread; the state lives here, never in
 // `Game`'s fields.
@@ -23,7 +23,7 @@ use std::{
 
 pub(crate) const MINIMAP: &str = "ayynoxs_minimap";
 pub(crate) const WORLDMAP: &str = "ayynoxs_worldmap";
-pub(crate) const VERSION: &str = "0.1.0";
+pub(crate) const VERSION: &str = "0.2.0";
 
 const KEY_WAYPOINT: &str = "waypoint";
 const KEY_ZOOM_IN: &str = "zoom_in";
@@ -40,6 +40,11 @@ const SCAN_BUDGET: Duration = Duration::from_micros(1500);
 const NEAR: i32 = 3;
 const RESCAN: Duration = Duration::from_secs(2);
 const SAVE_EVERY: Duration = Duration::from_secs(15);
+/// A new layer must hold this long before the map follows it, so that
+/// walking under an overhang doesn't flip it back and forth.
+const LAYER_SETTLE: Duration = Duration::from_millis(750);
+/// Cave layers are kept per band of this many blocks of head height.
+const BAND: i32 = 16;
 /// The world map's columns at most; zoomed out, a cell samples one block.
 const MAX_COLUMNS: f32 = 320.0;
 
@@ -51,11 +56,172 @@ const CORNERS: [Corner; 4] = [
     Corner::BottomLeft,
     Corner::BottomRight,
 ];
-const CORNER_NAMES: [&str; 4] = ["Oben links", "Oben rechts", "Unten links", "Unten rechts"];
 /// Waypoint colours, ARGB.
 const COLORS: [u32; 8] = [
     0xFFFF5555, 0xFF55FF55, 0xFF5599FF, 0xFFFFFF55, 0xFFFF55FF, 0xFF55FFFF, 0xFFFFAA00, 0xFFFFFFFF,
 ];
+
+// --- Languages ---------------------------------------------------------
+
+/// Each language's own name, in the order of every row of `tr`.
+const LANGS: [&str; 5] = ["English", "Deutsch", "Français", "Italiano", "Русский"];
+
+#[derive(Clone, Copy)]
+enum T {
+    WorldTitle,
+    MiniDesc,
+    WorldDesc,
+    KeyWaypoint,
+    KeyZoomIn,
+    KeyZoomOut,
+    KeyOpen,
+    Language,
+    Corner,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    Size,
+    Zoom,
+    BlocksPerPixel,
+    Shape,
+    Round,
+    Square,
+    Rotate,
+    Coordinates,
+    Waypoints,
+    On,
+    Off,
+    Explore,
+    Grid,
+    MapWaypoints,
+    WaypointN,
+    DeathPoint,
+    Prefix,
+    MsgSet,
+    MsgDeleted,
+    MsgCleared,
+    MsgNone,
+    OtherDim,
+    South,
+    SouthWest,
+    West,
+    NorthWest,
+    North,
+    NorthEast,
+    East,
+    SouthEast,
+    Overworld,
+    Nether,
+    End,
+    Surface,
+    Cave,
+    Hint,
+    PxPerBlock,
+    BlocksPerPx,
+}
+
+/// `t` in language `lang` (an index of `LANGS`).
+fn tr(lang: usize, t: T) -> &'static str {
+    let row: [&str; 5] = match t {
+        T::WorldTitle => ["ayynoxs world map", "ayynoxs weltkarte", "ayynoxs carte du monde", "ayynoxs mappa del mondo", "ayynoxs карта мира"],
+        T::MiniDesc => [
+            "Minimap with coordinates, direction, waypoints and a death point. /wp add|del|list|clear",
+            "Minimap mit Koordinaten, Himmelsrichtung, Wegpunkten und Todespunkt. /wp add|del|list|clear",
+            "Minicarte avec coordonnées, direction, points de passage et point de mort. /wp add|del|list|clear",
+            "Minimappa con coordinate, direzione, waypoint e punto di morte. /wp add|del|list|clear",
+            "Миникарта с координатами, направлением, метками и точкой смерти. /wp add|del|list|clear",
+        ],
+        T::WorldDesc => [
+            "Full-screen map of every chunk you explored, saved per world and layer.",
+            "Vollbild-Karte aller erkundeten Chunks, pro Welt und Ebene gespeichert.",
+            "Carte plein écran de tous les chunks explorés, enregistrée par monde et par couche.",
+            "Mappa a schermo intero di tutti i chunk esplorati, salvata per mondo e livello.",
+            "Полноэкранная карта всех исследованных чанков, по мирам и слоям.",
+        ],
+        T::KeyWaypoint => ["Set waypoint", "Wegpunkt setzen", "Placer un point", "Imposta waypoint", "Поставить метку"],
+        T::KeyZoomIn => ["Zoom in", "Hineinzoomen", "Zoom avant", "Ingrandisci", "Приблизить"],
+        T::KeyZoomOut => ["Zoom out", "Herauszoomen", "Zoom arrière", "Riduci", "Отдалить"],
+        T::KeyOpen => ["Open world map", "Weltkarte öffnen", "Ouvrir la carte", "Apri la mappa", "Открыть карту мира"],
+        T::Language => ["Language", "Sprache", "Langue", "Lingua", "Язык"],
+        T::Corner => ["Corner", "Ecke", "Coin", "Angolo", "Угол"],
+        T::TopLeft => ["Top left", "Oben links", "En haut à gauche", "In alto a sinistra", "Сверху слева"],
+        T::TopRight => ["Top right", "Oben rechts", "En haut à droite", "In alto a destra", "Сверху справа"],
+        T::BottomLeft => ["Bottom left", "Unten links", "En bas à gauche", "In basso a sinistra", "Снизу слева"],
+        T::BottomRight => ["Bottom right", "Unten rechts", "En bas à droite", "In basso a destra", "Снизу справа"],
+        T::Size => ["Size", "Größe", "Taille", "Dimensione", "Размер"],
+        T::Zoom => ["Zoom", "Zoom", "Zoom", "Zoom", "Масштаб"],
+        T::BlocksPerPixel => ["blocks/pixel", "Blöcke/Pixel", "blocs/pixel", "blocchi/pixel", "блоков/пиксель"],
+        T::Shape => ["Shape", "Form", "Forme", "Forma", "Форма"],
+        T::Round => ["Round", "Rund", "Ronde", "Rotonda", "Круглая"],
+        T::Square => ["Square", "Eckig", "Carrée", "Quadrata", "Квадратная"],
+        T::Rotate => ["Rotate with player", "Mitdrehen", "Tourner avec le joueur", "Ruota con il giocatore", "Вращать с игроком"],
+        T::Coordinates => ["Coordinates", "Koordinaten", "Coordonnées", "Coordinate", "Координаты"],
+        T::Waypoints => ["Waypoints", "Wegpunkte", "Points de passage", "Waypoint", "Метки"],
+        T::On => ["On", "An", "Activé", "Attivo", "Вкл"],
+        T::Off => ["Off", "Aus", "Désactivé", "Disattivo", "Выкл"],
+        T::Explore => ["Explore & save", "Erkunden & speichern", "Explorer et enregistrer", "Esplora e salva", "Исследовать и сохранять"],
+        T::Grid => ["Chunk grid", "Chunk-Raster", "Grille des chunks", "Griglia dei chunk", "Сетка чанков"],
+        T::MapWaypoints => ["Waypoints on the map", "Wegpunkte auf der Karte", "Points sur la carte", "Waypoint sulla mappa", "Метки на карте"],
+        T::WaypointN => ["Waypoint {0}", "Wegpunkt {0}", "Point {0}", "Waypoint {0}", "Метка {0}"],
+        T::DeathPoint => ["Death point", "Todespunkt", "Point de mort", "Punto di morte", "Точка смерти"],
+        T::Prefix => ["[Map]", "[Karte]", "[Carte]", "[Mappa]", "[Карта]"],
+        T::MsgSet => [
+            "Waypoint §e{0}§r set at {1}",
+            "Wegpunkt §e{0}§r gesetzt bei {1}",
+            "Point §e{0}§r placé en {1}",
+            "Waypoint §e{0}§r impostato a {1}",
+            "Метка §e{0}§r поставлена: {1}",
+        ],
+        T::MsgDeleted => ["{0} waypoint(s) deleted", "{0} Wegpunkt(e) gelöscht", "{0} point(s) supprimé(s)", "{0} waypoint eliminati", "Удалено меток: {0}"],
+        T::MsgCleared => [
+            "All waypoints of this world deleted",
+            "Alle Wegpunkte dieser Welt gelöscht",
+            "Tous les points de ce monde ont été supprimés",
+            "Tutti i waypoint di questo mondo eliminati",
+            "Все метки этого мира удалены",
+        ],
+        T::MsgNone => [
+            "No waypoints yet. /wp add <name> sets one.",
+            "Keine Wegpunkte. /wp add <Name> setzt einen.",
+            "Aucun point. /wp add <nom> en place un.",
+            "Nessun waypoint. /wp add <nome> ne imposta uno.",
+            "Меток нет. /wp add <имя> ставит метку.",
+        ],
+        T::OtherDim => ["other dimension", "andere Dimension", "autre dimension", "altra dimensione", "другое измерение"],
+        T::South => ["South", "Süden", "Sud", "Sud", "Юг"],
+        T::SouthWest => ["Southwest", "Südwesten", "Sud-ouest", "Sud-ovest", "Юго-запад"],
+        T::West => ["West", "Westen", "Ouest", "Ovest", "Запад"],
+        T::NorthWest => ["Northwest", "Nordwesten", "Nord-ouest", "Nord-ovest", "Северо-запад"],
+        T::North => ["North", "Norden", "Nord", "Nord", "Север"],
+        T::NorthEast => ["Northeast", "Nordosten", "Nord-est", "Nord-est", "Северо-восток"],
+        T::East => ["East", "Osten", "Est", "Est", "Восток"],
+        T::SouthEast => ["Southeast", "Südosten", "Sud-est", "Sud-est", "Юго-восток"],
+        T::Overworld => ["Overworld", "Oberwelt", "Surface", "Overworld", "Верхний мир"],
+        T::Nether => ["Nether", "Nether", "Nether", "Nether", "Незер"],
+        T::End => ["The End", "Ende", "L'End", "L'End", "Энд"],
+        T::Surface => ["Surface", "Oberfläche", "Surface", "Superficie", "Поверхность"],
+        T::Cave => ["Cave, Y {0}", "Höhle, Y {0}", "Grotte, Y {0}", "Grotta, Y {0}", "Пещера, Y {0}"],
+        T::Hint => [
+            "Drag/WASD: move · Wheel: zoom · Space: to you · B: waypoint · M/Esc: close",
+            "Ziehen/WASD: bewegen · Mausrad: Zoom · Leertaste: zu dir · B: Wegpunkt · M/Esc: schließen",
+            "Glisser/ZQSD : déplacer · Molette : zoom · Espace : vers toi · B : point · M/Échap : fermer",
+            "Trascina/WASD: muovi · Rotella: zoom · Spazio: da te · B: waypoint · M/Esc: chiudi",
+            "Тащить/WASD: двигать · Колесо: масштаб · Пробел: к себе · B: метка · M/Esc: закрыть",
+        ],
+        T::PxPerBlock => ["{0} px/block", "{0} px/Block", "{0} px/bloc", "{0} px/blocco", "{0} px/блок"],
+        T::BlocksPerPx => ["1 px = {0} blocks", "1 px = {0} Blöcke", "1 px = {0} blocs", "1 px = {0} blocchi", "1 px = {0} блоков"],
+    };
+    row[lang.min(LANGS.len() - 1)]
+}
+/// `template` with `{0}`, `{1}`… replaced by `args`.
+fn fill(template: &str, args: &[&str]) -> String {
+    let mut out = template.to_owned();
+    for (i, a) in args.iter().enumerate() {
+        out = out.replace(&format!("{{{i}}}"), a);
+    }
+    out
+}
 
 // --- State -------------------------------------------------------------
 
@@ -110,8 +276,8 @@ struct Waypoint {
     death: bool,
 }
 
-/// One column-wide strip of the map: per column `id << 2 | brightness`
-/// (0 unknown), and its height.
+/// One chunk of the map: per column `id << 2 | brightness` (0 unknown),
+/// and its height.
 struct Tile {
     color: [u8; 256],
     height: [i16; 256],
@@ -178,6 +344,36 @@ impl Palette {
     }
 }
 
+/// Which layer of a dimension the map shows, as Horizon's minimap picks
+/// it: the surface under the open sky, else (underground, under a roof, in
+/// the Nether) the floor below the player's head, walls cut at it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Layer {
+    Surface,
+    /// The band `head / BAND` of head heights.
+    Cave(i32),
+}
+impl Layer {
+    fn of(cut: Option<i32>) -> Self {
+        cut.map_or(Layer::Surface, |head| Layer::Cave(head.div_euclid(BAND)))
+    }
+    /// Its folder under the dimension's: the surface keeps 0.1.0's.
+    fn folder(&self) -> Option<String> {
+        match self {
+            Layer::Surface => None,
+            Layer::Cave(band) => Some(format!("cave_{band}")),
+        }
+    }
+}
+
+/// The world's key (`sp_<folder>`, `mp_<address>`), dimension and layer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Place {
+    world: String,
+    dim: String,
+    layer: Layer,
+}
+
 #[derive(Default)]
 struct Explorer {
     /// Chunks scanned: the chunk's allocation (a new one is a new chunk),
@@ -203,10 +399,14 @@ struct MapScreen {
 
 struct State {
     loaded: bool,
+    lang: usize,
     mini: MiniSettings,
     map: MapSettings,
-    /// The world's key (`sp_<folder>`, `mp_<address>`) and dimension.
-    world: Option<(String, String)>,
+    place: Option<Place>,
+    /// The head height the current cave layer is cut at; none on the surface.
+    cut: Option<i32>,
+    /// A layer the player moved into, and since when.
+    pending: Option<(Layer, Instant)>,
     server: String,
     waypoints: Vec<Waypoint>,
     dead: bool,
@@ -220,9 +420,12 @@ impl Default for State {
     fn default() -> Self {
         Self {
             loaded: false,
+            lang: 0,
             mini: MiniSettings::default(),
             map: MapSettings::default(),
-            world: None,
+            place: None,
+            cut: None,
+            pending: None,
             server: String::new(),
             waypoints: Vec::new(),
             dead: false,
@@ -254,6 +457,7 @@ fn index(game: &Game<'_>, id: &str, key: &str, default: usize, len: usize) -> us
         .unwrap_or(default)
 }
 fn load_settings(s: &mut State, game: &Game<'_>) {
+    s.lang = index(game, MINIMAP, "lang", 0, LANGS.len());
     let d = MiniSettings::default();
     s.mini = MiniSettings {
         corner: index(game, MINIMAP, "corner", d.corner, CORNERS.len()),
@@ -280,6 +484,7 @@ fn ensure_settings(s: &mut State, game: &Game<'_>) {
 fn store_settings(s: &State, game: &Game<'_>) {
     let m = s.mini;
     let pairs = [
+        ("lang", s.lang.to_string()),
         ("corner", m.corner.to_string()),
         ("size", m.size.to_string()),
         ("zoom", m.zoom.to_string()),
@@ -300,50 +505,59 @@ fn store_settings(s: &State, game: &Game<'_>) {
         game.native_set_setting(WORLDMAP, k, &v.to_string());
     }
 }
-fn on_off(b: bool) -> &'static str {
-    if b { "An" } else { "Aus" }
+fn on_off(lang: usize, b: bool) -> &'static str {
+    tr(lang, if b { T::On } else { T::Off })
 }
 
-/// Options > Mods: both halves of the pack.
-pub(super) fn listed(mods: &mut Vec<NativeMod>) {
+/// Options > Mods: both halves of the pack, in the chosen language (the
+/// list is made when the game starts).
+pub(super) fn listed(game: &Game<'_>, mods: &mut Vec<NativeMod>) {
+    let lang = with(|s| {
+        ensure_settings(s, game);
+        s.lang
+    });
     mods.push(NativeMod {
         id: MINIMAP.into(),
         title: format!("ayynoxs minimap {VERSION}"),
-        description: "Minimap mit Koordinaten, Himmelsrichtung, Wegpunkten und Todespunkt. \
-                      /wp add|del|list|clear"
-            .into(),
+        description: tr(lang, T::MiniDesc).into(),
         keys: vec![
-            [KEY_WAYPOINT.into(), "Wegpunkt setzen".into(), "key.keyboard.b".into()],
-            [KEY_ZOOM_IN.into(), "Hineinzoomen".into(), "key.keyboard.i".into()],
-            [KEY_ZOOM_OUT.into(), "Herauszoomen".into(), "key.keyboard.o".into()],
+            [KEY_WAYPOINT.into(), tr(lang, T::KeyWaypoint).into(), "key.keyboard.b".into()],
+            [KEY_ZOOM_IN.into(), tr(lang, T::KeyZoomIn).into(), "key.keyboard.i".into()],
+            [KEY_ZOOM_OUT.into(), tr(lang, T::KeyZoomOut).into(), "key.keyboard.o".into()],
         ],
     });
     mods.push(NativeMod {
         id: WORLDMAP.into(),
-        title: format!("ayynoxs weltkarte {VERSION}"),
-        description: "Vollbild-Weltkarte aller erkundeten Chunks, pro Welt gespeichert.".into(),
-        keys: vec![[KEY_OPEN.into(), "Weltkarte öffnen".into(), "key.keyboard.m".into()]],
+        title: format!("{} {VERSION}", tr(lang, T::WorldTitle)),
+        description: tr(lang, T::WorldDesc).into(),
+        keys: vec![[KEY_OPEN.into(), tr(lang, T::KeyOpen).into(), "key.keyboard.m".into()]],
     });
 }
 
-/// A settings page's buttons.
+/// A settings page's buttons; the language is the last of both pages.
 pub(super) fn settings_page(game: &Game<'_>, mod_id: &str, buttons: &mut Vec<String>) {
     with(|s| {
         ensure_settings(s, game);
+        let l = s.lang;
+        let language = format!("{}: {}", tr(l, T::Language), LANGS[l]);
         if mod_id == MINIMAP {
             let m = s.mini;
-            buttons.push(format!("Ecke: {}", CORNER_NAMES[m.corner]));
-            buttons.push(format!("Größe: {}", SIZES[m.size] as u32));
-            buttons.push(format!("Zoom: {} Blöcke/Pixel", ZOOMS[m.zoom]));
-            buttons.push(format!("Form: {}", if m.round { "Rund" } else { "Eckig" }));
-            buttons.push(format!("Mitdrehen: {}", on_off(m.rotate)));
-            buttons.push(format!("Koordinaten: {}", on_off(m.coords)));
-            buttons.push(format!("Wegpunkte: {}", on_off(m.waypoints)));
+            let corner = [T::TopLeft, T::TopRight, T::BottomLeft, T::BottomRight][m.corner];
+            let shape = if m.round { T::Round } else { T::Square };
+            buttons.push(format!("{}: {}", tr(l, T::Corner), tr(l, corner)));
+            buttons.push(format!("{}: {}", tr(l, T::Size), SIZES[m.size] as u32));
+            buttons.push(format!("{}: {} {}", tr(l, T::Zoom), ZOOMS[m.zoom], tr(l, T::BlocksPerPixel)));
+            buttons.push(format!("{}: {}", tr(l, T::Shape), tr(l, shape)));
+            buttons.push(format!("{}: {}", tr(l, T::Rotate), on_off(l, m.rotate)));
+            buttons.push(format!("{}: {}", tr(l, T::Coordinates), on_off(l, m.coords)));
+            buttons.push(format!("{}: {}", tr(l, T::Waypoints), on_off(l, m.waypoints)));
+            buttons.push(language);
         } else if mod_id == WORLDMAP {
             let m = s.map;
-            buttons.push(format!("Erkunden & speichern: {}", on_off(m.explore)));
-            buttons.push(format!("Chunk-Raster: {}", on_off(m.grid)));
-            buttons.push(format!("Wegpunkte auf der Karte: {}", on_off(m.waypoints)));
+            buttons.push(format!("{}: {}", tr(l, T::Explore), on_off(l, m.explore)));
+            buttons.push(format!("{}: {}", tr(l, T::Grid), on_off(l, m.grid)));
+            buttons.push(format!("{}: {}", tr(l, T::MapWaypoints), on_off(l, m.waypoints)));
+            buttons.push(language);
         }
     });
 }
@@ -351,6 +565,7 @@ pub(super) fn settings_page(game: &Game<'_>, mod_id: &str, buttons: &mut Vec<Str
 pub(super) fn settings_click(game: &Game<'_>, mod_id: &str, button: usize) {
     with(|s| {
         ensure_settings(s, game);
+        let next_lang = (s.lang + 1) % LANGS.len();
         if mod_id == MINIMAP {
             let m = &mut s.mini;
             match button {
@@ -361,6 +576,7 @@ pub(super) fn settings_click(game: &Game<'_>, mod_id: &str, button: usize) {
                 4 => m.rotate = !m.rotate,
                 5 => m.coords = !m.coords,
                 6 => m.waypoints = !m.waypoints,
+                7 => s.lang = next_lang,
                 _ => return,
             }
         } else if mod_id == WORLDMAP {
@@ -369,6 +585,7 @@ pub(super) fn settings_click(game: &Game<'_>, mod_id: &str, button: usize) {
                 0 => m.explore = !m.explore,
                 1 => m.grid = !m.grid,
                 2 => m.waypoints = !m.waypoints,
+                3 => s.lang = next_lang,
                 _ => return,
             }
         } else {
@@ -386,7 +603,7 @@ fn sanitize(text: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' })
         .take(80)
         .collect();
-    if s.is_empty() { "unbenannt".into() } else { s }
+    if s.is_empty() { "unnamed".into() } else { s }
 }
 fn world_key(s: &State, game: &Game<'_>) -> String {
     if game.remote.is_some() {
@@ -428,10 +645,10 @@ fn load_waypoints(game: &Game<'_>, world: &str) -> Vec<Waypoint> {
         .collect()
 }
 fn save_waypoints(s: &State, game: &Game<'_>) {
-    let Some((world, _)) = &s.world else {
+    let Some(place) = &s.place else {
         return;
     };
-    let path = waypoint_file(game, world);
+    let path = waypoint_file(game, &place.world);
     let mut out = String::new();
     for w in &s.waypoints {
         out.push_str(&format!(
@@ -458,17 +675,19 @@ fn clean_name(name: &str) -> String {
         .collect();
     n.trim().to_owned()
 }
+fn chat(s: &State, game: &mut Game<'_>, text: &str) {
+    game.native_chat(&format!("§a{}§r {text}", tr(s.lang, T::Prefix)));
+}
 fn add_waypoint(s: &mut State, game: &mut Game<'_>, name: &str, at: (i32, i32, i32), dim: &str) {
     let name = if clean_name(name).is_empty() {
-        format!("Wegpunkt {}", s.waypoints.iter().filter(|w| !w.death).count() + 1)
+        let n = (s.waypoints.iter().filter(|w| !w.death).count() + 1).to_string();
+        fill(tr(s.lang, T::WaypointN), &[&n])
     } else {
         clean_name(name)
     };
     let color = s.waypoints.len() % COLORS.len();
-    game.native_chat(&format!(
-        "§a[Karte]§r Wegpunkt §e{name}§r gesetzt bei {} {} {}",
-        at.0, at.1, at.2
-    ));
+    let pos = format!("{} {} {}", at.0, at.1, at.2);
+    chat(s, game, &fill(tr(s.lang, T::MsgSet), &[&name, &pos]));
     s.waypoints.push(Waypoint {
         name,
         x: at.0,
@@ -588,32 +807,48 @@ impl Explorer {
     }
 }
 
-/// A new world, a new dimension or none: save the old, start the new.
-fn switch_world(s: &mut State, game: &Game<'_>, now: Option<(String, String)>) {
-    if s.world == now {
+/// A new world, dimension or layer, or none: save the old, start the new.
+fn switch_place(s: &mut State, game: &Game<'_>, now: Option<Place>) {
+    if s.place == now {
         return;
     }
     flush(&mut s.explorer);
     s.explorer = Explorer::default();
-    let same_world = matches!((&s.world, &now), (Some(a), Some(b)) if a.0 == b.0);
+    let same_world = matches!((&s.place, &now), (Some(a), Some(b)) if a.world == b.world);
     if !same_world {
         s.palette = None;
     }
-    if let Some((world, dim)) = &now {
-        s.explorer.dir = Some(
-            game.native_data_dir(WORLDMAP)
-                .join("worlds")
-                .join(world)
-                .join(sanitize(dim)),
-        );
+    if let Some(place) = &now {
+        let mut dir = game
+            .native_data_dir(WORLDMAP)
+            .join("worlds")
+            .join(&place.world)
+            .join(sanitize(&place.dim));
+        if let Some(sub) = place.layer.folder() {
+            dir = dir.join(sub);
+        }
+        s.explorer.dir = Some(dir);
         if !same_world {
-            s.waypoints = load_waypoints(game, world);
+            s.waypoints = load_waypoints(game, &place.world);
         }
     } else {
         s.waypoints.clear();
         s.screen = None;
+        s.pending = None;
     }
-    s.world = now;
+    s.place = now;
+}
+
+/// The cave cut the player is at (`game/extras.rs`, `update_minimap`): the
+/// head's height when it has no sky light or in the Nether, else none.
+fn cut_now(game: &Game<'_>, x: f64, y: f64, z: f64, nether: bool) -> Option<i32> {
+    let eye = game
+        .player
+        .as_ref()
+        .map_or(1.62, |m| f64::from(m.dimensions.eye_height));
+    let head = (y + eye).floor() as i32;
+    let covered = game.world.light(x.floor() as i32, head, z.floor() as i32) >> 4 == 0;
+    (nether || covered).then_some(head)
 }
 
 // --- Exploring ---------------------------------------------------------
@@ -626,20 +861,17 @@ fn top_of(chunk: &Chunk, air: u32) -> i32 {
 }
 /// One column as `MapItem.update` sees it: the first block with a map
 /// colour going down, a fluid's colour unless the block is sturdy on top,
-/// and the fluid's depth. In the Nether the roof is skipped first.
-fn scan_column(chunk: &Chunk, p: &Palette, x: i32, z: i32, top: i32, nether: bool) -> (u8, i16, u8) {
+/// and the fluid's depth. With a cave `cut`, a solid block at that height
+/// is a wall (true) and the floor below it is scanned, as Horizon's minimap
+/// does (`minimap::scan_column`).
+fn scan_column(chunk: &Chunk, p: &Palette, x: i32, z: i32, top: i32, cut: Option<i32>) -> (u8, i16, u8, bool) {
     let mut y = top;
-    if nether {
-        y = y.min(126);
-        while y > MIN_Y && p.get(chunk.get(x, y, z)).1 & AIR == 0 {
-            y -= 1;
+    if let Some(head) = cut {
+        let (color, flags) = p.get(chunk.get(x, head, z));
+        if flags & AIR == 0 && color != 0 && flags & FLUID == 0 {
+            return (color, head as i16, 0, true);
         }
-        while y > MIN_Y && p.get(chunk.get(x, y, z)).1 & AIR != 0 {
-            y -= 1;
-        }
-        if y <= MIN_Y {
-            y = top;
-        }
+        y = top.min(head);
     }
     while y > MIN_Y {
         let (mut color, flags) = p.get(chunk.get(x, y, z));
@@ -660,13 +892,16 @@ fn scan_column(chunk: &Chunk, p: &Palette, x: i32, z: i32, top: i32, nether: boo
                 color = if fluid == LAVA_FLAG { LAVA } else { WATER };
             }
         }
-        return (color, y as i16, depth);
+        return (color, y as i16, depth, false);
     }
-    (0, MIN_Y as i16, 0)
+    (0, MIN_Y as i16, 0, false)
 }
 /// The map item's shading: lighter facing a lower north neighbour, darker
-/// facing a higher one, dithered; water by depth.
-fn brightness(color: u8, height: i16, north: i16, depth: u8, parity: i32) -> u8 {
+/// facing a higher one, dithered; water by depth; walls darkest.
+fn brightness(color: u8, height: i16, north: i16, depth: u8, parity: i32, wall: bool) -> u8 {
+    if wall {
+        return 3;
+    }
     let parity = f64::from(parity & 1);
     if color == WATER {
         let diff = f64::from(depth) * 0.1 + parity * 0.2;
@@ -681,13 +916,14 @@ fn brightness(color: u8, height: i16, north: i16, depth: u8, parity: i32) -> u8 
         1
     }
 }
-fn scan_tile(chunk: &Chunk, p: &Palette, air: u32, nether: bool, north: Option<&Tile>) -> Option<Tile> {
+fn scan_tile(chunk: &Chunk, p: &Palette, air: u32, cut: Option<i32>, north: Option<&Tile>) -> Option<Tile> {
     let top = top_of(chunk, air);
     if top < MIN_Y {
         return None;
     }
     let mut ids = [0u8; 256];
     let mut depth = [0u8; 256];
+    let mut walls = [false; 256];
     let mut tile = Tile {
         color: [0; 256],
         height: [MIN_Y as i16; 256],
@@ -695,11 +931,12 @@ fn scan_tile(chunk: &Chunk, p: &Palette, air: u32, nether: bool, north: Option<&
     let mut any = false;
     for z in 0..16 {
         for x in 0..16 {
-            let (c, h, d) = scan_column(chunk, p, x, z, top, nether);
+            let (c, h, d, wall) = scan_column(chunk, p, x, z, top, cut);
             let i = (z * 16 + x) as usize;
             ids[i] = c;
             tile.height[i] = h;
             depth[i] = d;
+            walls[i] = wall;
             any |= c != 0;
         }
     }
@@ -719,13 +956,14 @@ fn scan_tile(chunk: &Chunk, p: &Palette, air: u32, nether: bool, north: Option<&
             } else {
                 north.map_or(h, |t| t.height[(15 * 16 + x) as usize])
             };
-            let b = brightness(id, h, n, depth[i], chunk.x * 16 + x + chunk.z * 16 + z);
-            tile.color[i] = id << 2 | b;
+            let parity = chunk.x * 16 + x + chunk.z * 16 + z;
+            tile.color[i] = id << 2 | brightness(id, h, n, depth[i], parity, walls[i]);
         }
     }
     Some(tile)
 }
-fn explore(s: &mut State, game: &Game<'_>, px: f64, pz: f64, nether: bool) {
+fn explore(s: &mut State, game: &Game<'_>, px: f64, pz: f64) {
+    let cut = s.cut;
     let e = &mut s.explorer;
     if e.dir.is_none() {
         return;
@@ -764,7 +1002,7 @@ fn explore(s: &mut State, game: &Game<'_>, px: f64, pz: f64, nether: bool) {
                 e.scanned.insert(key, (ptr, world.revision, Instant::now()));
                 e.load((key.0 >> 5, (key.1 - 1) >> 5));
                 let north = e.tile(key.0, key.1 - 1);
-                let Some(tile) = scan_tile(chunk, palette, air, nether, north) else {
+                let Some(tile) = scan_tile(chunk, palette, air, cut, north) else {
                     continue;
                 };
                 let region = e.region_mut((key.0 >> 5, key.1 >> 5));
@@ -786,7 +1024,8 @@ fn explore(s: &mut State, game: &Game<'_>, px: f64, pz: f64, nether: bool) {
 
 // --- Hooks: frame, keys, commands --------------------------------------
 
-/// Once a frame: follow the world, note a death, explore, save.
+/// Once a frame: follow the world and the layer, note a death, explore,
+/// save.
 pub(super) fn frame(game: &mut Game<'_>) {
     if !game.native_window() {
         return;
@@ -794,20 +1033,58 @@ pub(super) fn frame(game: &mut Game<'_>) {
     with(|s| {
         ensure_settings(s, game);
         let Some(p) = game.native_player() else {
-            switch_world(s, game, None);
+            switch_place(s, game, None);
             return;
         };
-        let now = Some((world_key(s, game), p.dimension.to_owned()));
-        switch_world(s, game, now);
+        let nether = p.dimension == "minecraft:the_nether";
+        let world = world_key(s, game);
         // The map screen was closed by something else (death, a kick).
         if s.screen.is_some() && game.screen != Screen::Advancements {
             s.screen = None;
+        }
+        // The layer follows the player once it has settled; never while
+        // the map is open (the game is paused, the view must stay).
+        let cut = cut_now(game, p.x, p.y, p.z, nether);
+        let layer = Layer::of(cut);
+        let moved = s
+            .place
+            .as_ref()
+            .is_none_or(|pl| pl.world != world || pl.dim != p.dimension);
+        let current = s.place.as_ref().map(|pl| pl.layer.clone());
+        let follow = if moved {
+            true
+        } else if current.as_ref() == Some(&layer) {
+            s.pending = None;
+            false
+        } else if s.screen.is_some() {
+            false
+        } else {
+            match &s.pending {
+                Some((l, since)) if *l == layer => since.elapsed() >= LAYER_SETTLE,
+                _ => {
+                    s.pending = Some((layer.clone(), Instant::now()));
+                    false
+                }
+            }
+        };
+        if follow {
+            s.pending = None;
+            let now = Place {
+                world,
+                dim: p.dimension.to_owned(),
+                layer: layer.clone(),
+            };
+            switch_place(s, game, Some(now));
+        }
+        // Within its layer the cave map is cut at the player's head.
+        if s.place.as_ref().is_some_and(|pl| pl.layer == layer) && s.screen.is_none() {
+            s.cut = cut;
         }
         let dead = game.screen == Screen::Dead;
         if dead && !s.dead && game.native_on(MINIMAP) {
             s.waypoints.retain(|w| !w.death);
             s.waypoints.push(Waypoint {
-                name: "Todespunkt".into(),
+                name: tr(s.lang, T::DeathPoint).into(),
                 x: p.x.floor() as i32,
                 y: p.y.floor() as i32,
                 z: p.z.floor() as i32,
@@ -818,9 +1095,9 @@ pub(super) fn frame(game: &mut Game<'_>) {
             save_waypoints(s, game);
         }
         s.dead = dead;
-        if game.native_on(WORLDMAP) && s.map.explore {
-            let nether = p.dimension == "minecraft:the_nether";
-            explore(s, game, p.x, p.z, nether);
+        let in_layer = s.place.as_ref().is_some_and(|pl| pl.layer == Layer::of(s.cut));
+        if game.native_on(WORLDMAP) && s.map.explore && in_layer {
+            explore(s, game, p.x, p.z);
         }
         if s.last_save.elapsed() >= SAVE_EVERY {
             flush(&mut s.explorer);
@@ -906,7 +1183,7 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
                 let (bx, bz) = map_block(m, cursor, size);
                 let (_, h) = s.explorer.column(bx, bz);
                 let y = if h == 0 { 64 } else { i32::from(h) + 1 };
-                let dim = s.world.as_ref().map(|w| w.1.clone()).unwrap_or_default();
+                let dim = s.place.as_ref().map(|pl| pl.dim.clone()).unwrap_or_default();
                 add_waypoint(s, game, "", (bx, y, bz), &dim);
             }
             return;
@@ -949,9 +1226,11 @@ pub(super) fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
     let rest: Vec<&str> = words.collect();
     let rest = rest.join(" ");
     with(|s| {
+        ensure_settings(s, game);
         let Some(p) = game.native_player() else {
             return;
         };
+        let l = s.lang;
         match sub {
             "add" | "set" => {
                 let at = (p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
@@ -967,18 +1246,18 @@ pub(super) fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
                 } else {
                     s.waypoints.retain(|w| !w.name.eq_ignore_ascii_case(n));
                 }
-                let gone = before - s.waypoints.len();
+                let gone = (before - s.waypoints.len()).to_string();
                 save_waypoints(s, game);
-                game.native_chat(&format!("§a[Karte]§r {gone} Wegpunkt(e) gelöscht"));
+                chat(s, game, &fill(tr(l, T::MsgDeleted), &[&gone]));
             }
             "clear" => {
                 s.waypoints.clear();
                 save_waypoints(s, game);
-                game.native_chat("§a[Karte]§r Alle Wegpunkte dieser Welt gelöscht");
+                chat(s, game, tr(l, T::MsgCleared));
             }
             _ => {
                 if s.waypoints.is_empty() {
-                    game.native_chat("§a[Karte]§r Keine Wegpunkte. /wp add <Name> setzt einen.");
+                    chat(s, game, tr(l, T::MsgNone));
                 }
                 let lines: Vec<String> = s
                     .waypoints
@@ -986,12 +1265,16 @@ pub(super) fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
                     .enumerate()
                     .map(|(i, w)| {
                         let d = ((f64::from(w.x) - p.x).powi(2) + (f64::from(w.z) - p.z).powi(2)).sqrt();
-                        let here = if w.dim == p.dimension { format!("{} m", d as i64) } else { "andere Dimension".into() };
+                        let here = if w.dim == p.dimension {
+                            format!("{} m", d as i64)
+                        } else {
+                            tr(l, T::OtherDim).into()
+                        };
                         format!("§7{}.§r §e{}§r  {} {} {}  §7({here})", i + 1, w.name, w.x, w.y, w.z)
                     })
                     .collect();
-                for l in lines {
-                    game.native_chat(&l);
+                for line in lines {
+                    game.native_chat(&line);
                 }
             }
         }
@@ -1022,10 +1305,20 @@ fn argb(c: u32) -> u32 {
     let [a, r, g, b] = c.to_be_bytes();
     rgba(r, g, b, a)
 }
-fn facing(yaw: f32) -> &'static str {
+fn facing(lang: usize, yaw: f32) -> &'static str {
     // 0 faces south, 90 west, 180 north, 270 east.
     let i = ((yaw.rem_euclid(360.0) + 22.5) / 45.0) as usize % 8;
-    ["Süden", "Südwesten", "Westen", "Nordwesten", "Norden", "Nordosten", "Osten", "Südosten"][i]
+    let dirs = [
+        T::South,
+        T::SouthWest,
+        T::West,
+        T::NorthWest,
+        T::North,
+        T::NorthEast,
+        T::East,
+        T::SouthEast,
+    ];
+    tr(lang, dirs[i])
 }
 /// A small diamond.
 fn marker(batch: &mut HudBatch, game: &Game<'_>, x: f32, y: f32, r: f32, color: u32) {
@@ -1060,7 +1353,7 @@ pub(super) fn hud(game: &Game<'_>, batch: &mut HudBatch, corners: &mut Corners) 
         let lines: Vec<String> = if m.coords {
             vec![
                 format!("{} {} {}", p.x.floor() as i64, p.y.floor() as i64, p.z.floor() as i64),
-                facing(p.yaw).to_owned(),
+                facing(s.lang, p.yaw).to_owned(),
             ]
         } else {
             Vec::new()
@@ -1094,23 +1387,12 @@ pub(super) fn hud(game: &Game<'_>, batch: &mut HudBatch, corners: &mut Corners) 
             let dz = (f64::from(w.z) + 0.5 - p.z) as f32;
             let mut u = (dx * r[0] + dz * r[1]) * px_per_block;
             let mut v = -(dx * f[0] + dz * f[1]) * px_per_block;
-            let edge = if m.round {
-                let d = (u * u + v * v).sqrt();
-                let out = d > half;
-                if out {
-                    u *= half / d;
-                    v *= half / d;
-                }
-                out
-            } else {
-                let d = u.abs().max(v.abs());
-                let out = d > half;
-                if out {
-                    u *= half / d;
-                    v *= half / d;
-                }
-                out
-            };
+            let d = if m.round { (u * u + v * v).sqrt() } else { u.abs().max(v.abs()) };
+            let edge = d > half;
+            if edge {
+                u *= half / d;
+                v *= half / d;
+            }
             let color = if w.death { 0xFFAAAAAA } else { COLORS[w.color] };
             marker(batch, game, cx + u, cy + v, if edge { 1.5 } else { 2.5 }, color);
         }
@@ -1151,12 +1433,12 @@ fn lut() -> [u32; 256] {
     }
     out
 }
-fn dim_name(dim: &str) -> &str {
+fn dim_name(lang: usize, dim: &str) -> String {
     match dim {
-        "minecraft:overworld" => "Oberwelt",
-        "minecraft:the_nether" => "Nether",
-        "minecraft:the_end" => "Ende",
-        other => other,
+        "minecraft:overworld" => tr(lang, T::Overworld).into(),
+        "minecraft:the_nether" => tr(lang, T::Nether).into(),
+        "minecraft:the_end" => tr(lang, T::End).into(),
+        other => other.into(),
     }
 }
 
@@ -1166,6 +1448,7 @@ pub(super) fn draw(game: &mut Game<'_>, batch: &mut HudBatch) -> std::ops::Contr
         let Some(m) = s.screen.as_mut() else {
             return std::ops::ControlFlow::Continue(());
         };
+        let l = s.lang;
         let (w, h) = (batch.width, batch.height);
         // Keys held pan the map.
         let dt = m.last.elapsed().as_secs_f32().min(0.1);
@@ -1197,14 +1480,13 @@ pub(super) fn draw(game: &mut Game<'_>, batch: &mut HudBatch) -> std::ops::Contr
         let cols = (w / cell).ceil() as i32 + 1;
         let rows = (h / cell).ceil() as i32 + 1;
         // Cells line up with blocks when a block covers several pixels.
-        let (ox, oz) = if cell <= zoom {
-            let fx = left.floor();
-            let fz = top.floor();
-            (((fx - left) * f64::from(zoom)) as f32, ((fz - top) * f64::from(zoom)) as f32)
+        let aligned = cell <= zoom;
+        let (base_x, base_z) = if aligned { (left.floor(), top.floor()) } else { (left, top) };
+        let (ox, oz) = if aligned {
+            (((base_x - left) * f64::from(zoom)) as f32, ((base_z - top) * f64::from(zoom)) as f32)
         } else {
             (0.0, 0.0)
         };
-        let (base_x, base_z) = if cell <= zoom { (left.floor(), top.floor()) } else { (left, top) };
         for j in 0..rows {
             let wz = (base_z + (f64::from(j) + 0.5) * step).floor() as i32;
             let y = oz + j as f32 * cell;
@@ -1217,9 +1499,7 @@ pub(super) fn draw(game: &mut Game<'_>, batch: &mut HudBatch) -> std::ops::Contr
                     0
                 };
                 match run {
-                    Some((start, rc)) if rc == c => {
-                        let _ = start;
-                    }
+                    Some((_, rc)) if rc == c => {}
                     Some((start, rc)) => {
                         if rc != 0 {
                             let x = ox + start as f32 * cell;
@@ -1250,7 +1530,7 @@ pub(super) fn draw(game: &mut Game<'_>, batch: &mut HudBatch) -> std::ops::Contr
         let to_screen = |x: f64, z: f64| -> (f32, f32) {
             (((x - left) * f64::from(zoom)) as f32, ((z - top) * f64::from(zoom)) as f32)
         };
-        let dim = s.world.as_ref().map(|w| w.1.clone()).unwrap_or_default();
+        let dim = s.place.as_ref().map(|pl| pl.dim.clone()).unwrap_or_default();
         // Waypoints.
         let mut label: Option<String> = None;
         if s.map.waypoints {
@@ -1287,9 +1567,15 @@ pub(super) fn draw(game: &mut Game<'_>, batch: &mut HudBatch) -> std::ops::Contr
                 marker(batch, game, px, py, 3.0, 0xFFFFFFFF);
             }
         }
-        // Bars.
+        // Bars: the title names the dimension and the layer shown.
         batch.fill(atlas, 0.0, 0.0, w, 14.0, argb(0xA0000000));
-        let title = format!("ayynoxs weltkarte – {}", dim_name(&dim));
+        let layer = match (&s.place, s.cut) {
+            (Some(pl), Some(head)) if matches!(pl.layer, Layer::Cave(_)) => {
+                fill(tr(l, T::Cave), &[&head.to_string()])
+            }
+            _ => tr(l, T::Surface).into(),
+        };
+        let title = format!("{} – {} – {}", tr(l, T::WorldTitle), dim_name(l, &dim), layer);
         let tw = HudBatch::text_width(atlas, &title);
         batch.text(atlas, &title, ((w - tw) / 2.0).round(), 3.0, u32::MAX, true);
         batch.fill(atlas, 0.0, h - 26.0, w, 26.0, argb(0xA0000000));
@@ -1302,14 +1588,13 @@ pub(super) fn draw(game: &mut Game<'_>, batch: &mut HudBatch) -> std::ops::Contr
         let info = label.unwrap_or(at);
         batch.text(atlas, &info, 4.0, h - 23.0, u32::MAX, true);
         let scale = if zoom >= 1.0 {
-            format!("{} px/Block", (zoom * 10.0).round() / 10.0)
+            fill(tr(l, T::PxPerBlock), &[&((zoom * 10.0).round() / 10.0).to_string()])
         } else {
-            format!("1 px = {} Blöcke", (10.0 / zoom).round() / 10.0)
+            fill(tr(l, T::BlocksPerPx), &[&((10.0 / zoom).round() / 10.0).to_string()])
         };
         let sw = HudBatch::text_width(atlas, &scale);
         batch.text(atlas, &scale, w - sw - 4.0, h - 23.0, argb(0xFFAAAAAA), true);
-        let hint = "Ziehen/WASD: bewegen · Mausrad: Zoom · Leertaste: zu dir · B: Wegpunkt · M/Esc: schließen";
-        batch.text(atlas, hint, 4.0, h - 12.0, argb(0xFFAAAAAA), true);
+        batch.text(atlas, tr(l, T::Hint), 4.0, h - 12.0, argb(0xFFAAAAAA), true);
         std::ops::ControlFlow::Break(())
     })
 }
