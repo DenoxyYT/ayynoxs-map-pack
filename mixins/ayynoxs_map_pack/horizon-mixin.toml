@@ -1,0 +1,168 @@
+# ayynoxs map pack: Minimap + Weltkarte for Horizon.
+[mod]
+id = "ayynoxs_map_pack"
+version = "0.1.0"
+priority = 100
+
+# The world map uses the Advancements screen's slot and the server address,
+# which are not native hook points: the pack is pinned to the commit it was
+# made on.
+[compatibility]
+horizon_revision = "d009ebd140476b5bdc958c00f56a75e82abec691"
+
+[[module]]
+id = "runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "ayynoxs_map"
+source = "runtime.rs"
+
+# --- Native hook points ------------------------------------------------
+
+[[injection]]
+id = "list"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
+helper = "list.rs"
+bindings = [
+  { name = "mods", ty = "&mut Vec<crate::game::native_hooks::NativeMod>", value = "&mut *mods" },
+]
+
+[[injection]]
+id = "settings"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings"
+helper = "settings.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "buttons", ty = "&mut Vec<String>", value = "&mut *buttons" },
+]
+
+[[injection]]
+id = "click"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings_click"
+helper = "click.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "button", ty = "usize", value = "button" },
+]
+
+[[injection]]
+id = "frame"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_frame"
+helper = "frame.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "key"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_key"
+helper = "key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "&str", value = "key" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+[[injection]]
+id = "command"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_command"
+helper = "command.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "command", ty = "&str", value = "command" },
+  { name = "ran", ty = "&mut bool", value = "&mut *ran" },
+]
+
+[[injection]]
+id = "minimap"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_minimap"
+helper = "minimap.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "minimap", ty = "&mut Option<crate::game::native_hooks::NativeMinimap>", value = "&mut *minimap" },
+]
+
+[[injection]]
+id = "hud"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_hud"
+helper = "hud.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "corners", ty = "&mut horizon_client::extras_hud::Corners", value = "&mut *corners" },
+]
+
+# --- The world map screen, in the Advancements screen's place ----------
+
+[[injection]]
+id = "map-draw"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::advancements_screen::Game<'_>::draw_advancements"
+helper = "map_draw.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+]
+
+[[injection]]
+id = "map-mouse"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::advancements_screen::Game<'_>::advancements_mouse"
+helper = "map_mouse.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+[[injection]]
+id = "map-drag"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::advancements_screen::Game<'_>::advancements_drag"
+helper = "map_drag.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+[[injection]]
+id = "map-scroll"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::advancements_screen::Game<'_>::advancements_scroll"
+helper = "map_scroll.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "y", ty = "f32", value = "y" },
+]
+
+[[injection]]
+id = "map-close"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::advancements_screen::Game<'_>::close_advancements"
+helper = "map_close.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+# --- A server's address, for its own map folder ------------------------
+
+[[injection]]
+id = "connecting"
+kind = "HEAD"
+target = "horizon_client::game::extras::Game<'_>::extras_connecting"
+helper = "connecting.rs"
+bindings = [
+  { name = "address", ty = "&str", value = "address" },
+]
