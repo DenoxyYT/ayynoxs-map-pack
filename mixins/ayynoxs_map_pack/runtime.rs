@@ -23,7 +23,7 @@ use std::{
 
 pub(crate) const MINIMAP: &str = "ayynoxs_minimap";
 pub(crate) const WORLDMAP: &str = "ayynoxs_worldmap";
-pub(crate) const VERSION: &str = "0.2.0";
+pub(crate) const VERSION: &str = "0.2.1";
 
 const KEY_WAYPOINT: &str = "waypoint";
 const KEY_ZOOM_IN: &str = "zoom_in";

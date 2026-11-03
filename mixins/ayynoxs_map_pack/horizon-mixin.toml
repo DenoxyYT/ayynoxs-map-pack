@@ -1,14 +1,14 @@
 # ayynoxs map pack: minimap + world map for Horizon.
 [mod]
 id = "ayynoxs_map_pack"
-version = "0.2.0"
+version = "0.2.1"
 priority = 100
 
 # The world map uses the Advancements screen's slot and the server address,
 # which are not native hook points: the pack is pinned to the commit it was
 # made on.
 [compatibility]
-horizon_revision = "d009ebd140476b5bdc958c00f56a75e82abec691"
+horizon_revision = "294448014fba585f8d5d09dd8886f482493b6417"
 
 [[module]]
 id = "runtime"

@@ -5,7 +5,7 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $id = 'ayynoxs_map_pack'
-$version = '0.2.0'
+$version = '0.2.1'
 $root = $PSScriptRoot
 $bundle = Join-Path $root "mixins\$id"
 $dist = Join-Path $root 'dist'
@@ -15,7 +15,7 @@ if (Test-Path $out) { Remove-Item $out -Force }
 
 $manifest = [ordered]@{
     game    = '26.3'
-    horizon = 'd009ebd140476b5bdc958c00f56a75e82abec691'
+    horizon = '294448014fba585f8d5d09dd8886f482493b6417'
     id      = $id
     mixins  = '0d6b103c70633d8fd9443d8d0acd3aadaacedb06'
     schema  = 1

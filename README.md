@@ -43,7 +43,7 @@ button on either mod's settings page; both mods share the choice. The settings p
 messages switch right away. The names in the *Options > Mods* list switch after a restart.
 
 ## Install
-1. Download `ayynoxs_map_pack-0.2.0.hnmod` from the
+1. Download `ayynoxs_map_pack-0.2.1.hnmod` from the
    [releases](https://github.com/DenoxyYT/ayynoxs-map-pack/releases).
 2. Install it on the **Mods** page of the Horizon launcher.
 3. Click **Build** and confirm with "I trust these mods: build".
@@ -55,14 +55,14 @@ Native mods run as native code with your user's full permissions, so only build 
    ```powershell
    powershell -ExecutionPolicy Bypass -File pack.ps1
    ```
-   This writes `dist/ayynoxs_map_pack-0.2.0.hnmod`.
+   This writes `dist/ayynoxs_map_pack-0.2.1.hnmod`.
 2. Install that file in the launcher as above, or build straight from the source folder:
    ```powershell
    horizon-launcher native-build mixins/ayynoxs_map_pack --trust-native-code
    ```
 
 ## Technical notes
-- Pinned to Horizon commit `d009ebd1`. Besides the official native hook points, the world map takes the slot of the
+- Pinned to Horizon nightly commit `2944480` (2026-11-03). Besides the official native hook points, the world map takes the slot of the
   Advancements screen (`advancements_screen`) and hooks `extras_connecting` to read the server address. A new
   Horizon release therefore needs the pin updated and the pack checked again.
 - Map files are named `r.X.Z.amr`. Each holds 32×32 chunks, with 1 byte of colour and 2 bytes of height per block column.
