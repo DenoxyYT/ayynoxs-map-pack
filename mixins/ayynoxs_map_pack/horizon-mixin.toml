@@ -1,7 +1,7 @@
 # ayynoxs map pack: minimap + world map for Horizon.
 [mod]
 id = "ayynoxs_map_pack"
-version = "0.3.0"
+version = "0.4.0"
 priority = 100
 
 # The world map uses the Advancements screen's slot and the server address,
@@ -167,3 +167,98 @@ helper = "connecting.rs"
 bindings = [
   { name = "address", ty = "&str", value = "address" },
 ]
+
+# --- The name window: its characters and keys --------------------------
+
+[[injection]]
+id = "dialog-char"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_char_typed_pre"
+helper = "dialog_char.rs"
+bindings = [
+  { name = "c", ty = "char", value = "c" },
+  { name = "canceled", ty = "&mut bool", value = "&mut *canceled" },
+]
+
+[[injection]]
+id = "dialog-key"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_screen_key_pressed_pre"
+helper = "dialog_key.rs"
+bindings = [
+  { name = "key", ty = "&str", value = "key" },
+  { name = "canceled", ty = "&mut bool", value = "&mut *canceled" },
+]
+
+# --- Sharing: mod messages, and the relay a Horizon host runs ----------
+
+[[injection]]
+id = "net-from-server"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_net_from_server"
+helper = "net_from_server.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "channel", ty = "&str", value = "channel" },
+  { name = "data", ty = "&[u8]", value = "data" },
+]
+
+[[injection]]
+id = "net-from-client"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_net_from_client"
+helper = "net_from_client.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "player", ty = "u128", value = "player" },
+  { name = "channel", ty = "&str", value = "channel" },
+  { name = "data", ty = "&[u8]", value = "data" },
+]
+
+[[injection]]
+id = "player-in"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_player_logged_in"
+helper = "player_in.rs"
+bindings = [{ name = "player", ty = "u128", value = "player" }]
+
+[[injection]]
+id = "player-out"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_player_logged_out"
+helper = "player_out.rs"
+bindings = [{ name = "player", ty = "u128", value = "player" }]
+
+[[injection]]
+id = "relay-tick"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tick"
+helper = "relay_tick.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+# --- Waypoints through private chat messages, on any server -------------
+
+[[module]]
+id = "chat-inbox"
+file = "crates/horizon-client-render/src/lib.rs"
+name = "ayynoxs_chat"
+source = "chat_inbox.rs"
+visibility = "pub"
+
+[[injection]]
+id = "chat-add"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::chat::Chat::add"
+helper = "chat_add.rs"
+bindings = [{ name = "content", ty = "&crate::text::Text", value = "&content" }]
+
+[[injection]]
+id = "chat-add-signed"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client_render::chat::Chat::add_signed"
+helper = "chat_add_signed.rs"
+bindings = [{ name = "content", ty = "&crate::text::Text", value = "&content" }]

@@ -1,0 +1,7 @@
+name: AyynoxsMapSync
+version: '0.4.0'
+main: de.ayynoxs.mapsync.AyynoxsMapSync
+api-version: '26.2'
+authors: [DenoxyYT]
+description: Lets Horizon players with ayynoxs map pack share waypoints and their explored map.
+website: https://github.com/DenoxyYT/ayynoxs-map-pack

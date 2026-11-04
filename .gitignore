@@ -1,2 +1,4 @@
 dist/
 *.tmp
+paper-plugin/build/
+paper-plugin/.gradle/
