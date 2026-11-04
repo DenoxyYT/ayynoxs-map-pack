@@ -4,7 +4,10 @@
 //
 // Everything runs on the window's thread; the state lives here, never in
 // `Game`'s fields.
-use super::{Game, Screen, native_hooks::NativeMinimap, native_hooks::NativeMod};
+use super::{
+    Game, Screen,
+    native_hooks::{NativeMinimap, NativeMod, NativePlayer},
+};
 use horizon_client::{
     blocks::{BlockFacts, Fluid, MAP_COLORS},
     chunk::{Chunk, MIN_Y, SECTIONS},
@@ -23,7 +26,7 @@ use std::{
 
 pub(crate) const MINIMAP: &str = "ayynoxs_minimap";
 pub(crate) const WORLDMAP: &str = "ayynoxs_worldmap";
-pub(crate) const VERSION: &str = "0.2.1";
+pub(crate) const VERSION: &str = "0.3.0";
 
 const KEY_WAYPOINT: &str = "waypoint";
 const KEY_ZOOM_IN: &str = "zoom_in";
@@ -119,6 +122,12 @@ enum T {
     Hint,
     PxPerBlock,
     BlocksPerPx,
+    InWorld,
+    MsgRemoved,
+    MsgRenamed,
+    MsgExists,
+    MsgNotFound,
+    MsgHelp,
 }
 
 /// `t` in language `lang` (an index of `LANGS`).
@@ -203,14 +212,50 @@ fn tr(lang: usize, t: T) -> &'static str {
         T::Surface => ["Surface", "Oberfläche", "Surface", "Superficie", "Поверхность"],
         T::Cave => ["Cave, Y {0}", "Höhle, Y {0}", "Grotte, Y {0}", "Grotta, Y {0}", "Пещера, Y {0}"],
         T::Hint => [
-            "Drag/WASD: move · Wheel: zoom · Space: to you · B: waypoint · M/Esc: close",
-            "Ziehen/WASD: bewegen · Mausrad: Zoom · Leertaste: zu dir · B: Wegpunkt · M/Esc: schließen",
-            "Glisser/ZQSD : déplacer · Molette : zoom · Espace : vers toi · B : point · M/Échap : fermer",
-            "Trascina/WASD: muovi · Rotella: zoom · Spazio: da te · B: waypoint · M/Esc: chiudi",
-            "Тащить/WASD: двигать · Колесо: масштаб · Пробел: к себе · B: метка · M/Esc: закрыть",
+            "Drag/WASD: move · Wheel: zoom · Space: to you · B: waypoint · Del: remove · M/Esc: close",
+            "Ziehen/WASD: bewegen · Mausrad: Zoom · Leertaste: zu dir · B: Wegpunkt · Entf: löschen · M/Esc: schließen",
+            "Glisser/ZQSD : déplacer · Molette : zoom · Espace : vers toi · B : point · Suppr : effacer · M/Échap : fermer",
+            "Trascina/WASD: muovi · Rotella: zoom · Spazio: da te · B: waypoint · Canc: elimina · M/Esc: chiudi",
+            "Тащить/WASD: двигать · Колесо: масштаб · Пробел: к себе · B: метка · Del: удалить · M/Esc: закрыть",
         ],
         T::PxPerBlock => ["{0} px/block", "{0} px/Block", "{0} px/bloc", "{0} px/blocco", "{0} px/блок"],
         T::BlocksPerPx => ["1 px = {0} blocks", "1 px = {0} Blöcke", "1 px = {0} blocs", "1 px = {0} blocchi", "1 px = {0} блоков"],
+        T::InWorld => ["Waypoints in the world", "Wegpunkte in der Welt", "Points dans le monde", "Waypoint nel mondo", "Метки в мире"],
+        T::MsgRemoved => [
+            "Waypoint §e{0}§r removed",
+            "Wegpunkt §e{0}§r gelöscht",
+            "Point §e{0}§r supprimé",
+            "Waypoint §e{0}§r eliminato",
+            "Метка §e{0}§r удалена",
+        ],
+        T::MsgRenamed => [
+            "Waypoint renamed to §e{0}§r",
+            "Wegpunkt umbenannt in §e{0}§r",
+            "Point renommé en §e{0}§r",
+            "Waypoint rinominato in §e{0}§r",
+            "Метка переименована в §e{0}§r",
+        ],
+        T::MsgExists => [
+            "There is already a waypoint here: §e{0}§r. Press B on it again to remove it.",
+            "Hier ist schon ein Wegpunkt: §e{0}§r. Drück dort nochmal B, um ihn zu löschen.",
+            "Il y a déjà un point ici : §e{0}§r. Appuie encore sur B pour le supprimer.",
+            "Qui c'è già un waypoint: §e{0}§r. Premi di nuovo B per eliminarlo.",
+            "Здесь уже есть метка: §e{0}§r. Нажми B ещё раз, чтобы удалить её.",
+        ],
+        T::MsgNotFound => [
+            "No waypoint found. /wp list shows them all.",
+            "Kein Wegpunkt gefunden. /wp list zeigt alle.",
+            "Aucun point trouvé. /wp list les affiche tous.",
+            "Nessun waypoint trovato. /wp list li mostra tutti.",
+            "Метка не найдена. /wp list покажет все.",
+        ],
+        T::MsgHelp => [
+            "B: set a waypoint (type its name, Enter) or remove the one you stand on · /wp add <name> · /wp del [name|nr] (none: the nearest) · /wp rename <nr> <name> · /wp list · /wp clear",
+            "B: Wegpunkt setzen (Namen tippen, Enter) oder den, auf dem du stehst, löschen · /wp add <Name> · /wp del [Name|Nr] (ohne: den nächsten) · /wp rename <Nr> <Name> · /wp list · /wp clear",
+            "B : placer un point (tape son nom, Entrée) ou supprimer celui où tu es · /wp add <nom> · /wp del [nom|n°] (sans : le plus proche) · /wp rename <n°> <nom> · /wp list · /wp clear",
+            "B: imposta un waypoint (scrivi il nome, Invio) o elimina quello su cui sei · /wp add <nome> · /wp del [nome|nr] (senza: il più vicino) · /wp rename <nr> <nome> · /wp list · /wp clear",
+            "B: поставить метку (введи имя, Enter) или удалить ту, на которой стоишь · /wp add <имя> · /wp del [имя|№] (без: ближайшую) · /wp rename <№> <имя> · /wp list · /wp clear",
+        ],
     };
     row[lang.min(LANGS.len() - 1)]
 }
@@ -234,6 +279,8 @@ struct MiniSettings {
     rotate: bool,
     coords: bool,
     waypoints: bool,
+    /// Waypoints shown in the world with their distance.
+    world: bool,
 }
 impl Default for MiniSettings {
     fn default() -> Self {
@@ -245,6 +292,7 @@ impl Default for MiniSettings {
             rotate: false,
             coords: true,
             waypoints: true,
+            world: true,
         }
     }
 }
@@ -410,6 +458,9 @@ struct State {
     server: String,
     waypoints: Vec<Waypoint>,
     dead: bool,
+    /// The waypoint key asked for a name: the chat opens on the next frame,
+    /// so the key's own character doesn't land in it.
+    name_prompt: bool,
     /// The scan's palette, for the world's block states.
     palette: Option<Palette>,
     explorer: Explorer,
@@ -429,6 +480,7 @@ impl Default for State {
             server: String::new(),
             waypoints: Vec::new(),
             dead: false,
+            name_prompt: false,
             palette: None,
             explorer: Explorer::default(),
             screen: None,
@@ -467,6 +519,7 @@ fn load_settings(s: &mut State, game: &Game<'_>) {
         rotate: flag(game, MINIMAP, "rotate", d.rotate),
         coords: flag(game, MINIMAP, "coords", d.coords),
         waypoints: flag(game, MINIMAP, "waypoints", d.waypoints),
+        world: flag(game, MINIMAP, "world", d.world),
     };
     let m = MapSettings::default();
     s.map = MapSettings {
@@ -492,6 +545,7 @@ fn store_settings(s: &State, game: &Game<'_>) {
         ("rotate", m.rotate.to_string()),
         ("coords", m.coords.to_string()),
         ("waypoints", m.waypoints.to_string()),
+        ("world", m.world.to_string()),
     ];
     for (k, v) in pairs {
         game.native_set_setting(MINIMAP, k, &v);
@@ -551,6 +605,7 @@ pub(super) fn settings_page(game: &Game<'_>, mod_id: &str, buttons: &mut Vec<Str
             buttons.push(format!("{}: {}", tr(l, T::Rotate), on_off(l, m.rotate)));
             buttons.push(format!("{}: {}", tr(l, T::Coordinates), on_off(l, m.coords)));
             buttons.push(format!("{}: {}", tr(l, T::Waypoints), on_off(l, m.waypoints)));
+            buttons.push(format!("{}: {}", tr(l, T::InWorld), on_off(l, m.world)));
             buttons.push(language);
         } else if mod_id == WORLDMAP {
             let m = s.map;
@@ -576,7 +631,8 @@ pub(super) fn settings_click(game: &Game<'_>, mod_id: &str, button: usize) {
                 4 => m.rotate = !m.rotate,
                 5 => m.coords = !m.coords,
                 6 => m.waypoints = !m.waypoints,
-                7 => s.lang = next_lang,
+                7 => m.world = !m.world,
+                8 => s.lang = next_lang,
                 _ => return,
             }
         } else if mod_id == WORLDMAP {
@@ -678,7 +734,39 @@ fn clean_name(name: &str) -> String {
 fn chat(s: &State, game: &mut Game<'_>, text: &str) {
     game.native_chat(&format!("§a{}§r {text}", tr(s.lang, T::Prefix)));
 }
+/// The waypoint of `dim` nearest to `(x, y, z)` within `reach` blocks
+/// (horizontally; 4 blocks up or down), by index.
+fn nearest(s: &State, dim: &str, (x, y, z): (f64, f64, f64), reach: f64) -> Option<usize> {
+    s.waypoints
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| w.dim == dim && (f64::from(w.y) - y).abs() <= 4.0)
+        .map(|(i, w)| (i, (f64::from(w.x) + 0.5 - x).hypot(f64::from(w.z) + 0.5 - z)))
+        .filter(|&(_, d)| d <= reach)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(i, _)| i)
+}
+fn remove_waypoint(s: &mut State, game: &mut Game<'_>, i: usize) {
+    let w = s.waypoints.remove(i);
+    save_waypoints(s, game);
+    chat(s, game, &fill(tr(s.lang, T::MsgRemoved), &[&w.name]));
+}
+/// A new waypoint at `at`; on an existing one (not a death point) a name
+/// renames it instead of stacking a second one there.
 fn add_waypoint(s: &mut State, game: &mut Game<'_>, name: &str, at: (i32, i32, i32), dim: &str) {
+    let spot = (f64::from(at.0) + 0.5, f64::from(at.1), f64::from(at.2) + 0.5);
+    if let Some(i) = nearest(s, dim, spot, 1.5).filter(|&i| !s.waypoints[i].death) {
+        let name = clean_name(name);
+        if name.is_empty() {
+            let existing = s.waypoints[i].name.clone();
+            chat(s, game, &fill(tr(s.lang, T::MsgExists), &[&existing]));
+        } else {
+            s.waypoints[i].name = name.clone();
+            save_waypoints(s, game);
+            chat(s, game, &fill(tr(s.lang, T::MsgRenamed), &[&name]));
+        }
+        return;
+    }
     let name = if clean_name(name).is_empty() {
         let n = (s.waypoints.iter().filter(|w| !w.death).count() + 1).to_string();
         fill(tr(s.lang, T::WaypointN), &[&n])
@@ -1095,6 +1183,13 @@ pub(super) fn frame(game: &mut Game<'_>) {
             save_waypoints(s, game);
         }
         s.dead = dead;
+        // The waypoint key's name prompt: the chat, ready for the name.
+        if s.name_prompt {
+            s.name_prompt = false;
+            if game.native_playing() {
+                game.open_chat("/wp add ");
+            }
+        }
         let in_layer = s.place.as_ref().is_some_and(|pl| pl.layer == Layer::of(s.cut));
         if game.native_on(WORLDMAP) && s.map.explore && in_layer {
             explore(s, game, p.x, p.z);
@@ -1185,6 +1280,28 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
                 let y = if h == 0 { 64 } else { i32::from(h) + 1 };
                 let dim = s.place.as_ref().map(|pl| pl.dim.clone()).unwrap_or_default();
                 add_waypoint(s, game, "", (bx, y, bz), &dim);
+            } else if matches!(key, "key.keyboard.delete" | "key.keyboard.backspace" | "key.keyboard.x") {
+                // The waypoint under the pointer (its marker's few pixels).
+                let (zoom, cx, cz) = (f64::from(m.zoom), m.cx, m.cz);
+                let wx = cx + f64::from(cursor.0 - size.0 / 2.0) / zoom;
+                let wz = cz + f64::from(cursor.1 - size.1 / 2.0) / zoom;
+                let dim = s.place.as_ref().map(|pl| pl.dim.clone()).unwrap_or_default();
+                let hit = s
+                    .waypoints
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, w)| w.dim == dim)
+                    .map(|(i, w)| {
+                        let dx = (f64::from(w.x) + 0.5 - wx) * zoom;
+                        let dz = (f64::from(w.z) + 0.5 - wz) * zoom;
+                        (i, dx.abs().max(dz.abs()))
+                    })
+                    .filter(|&(_, d)| d <= 6.0)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(i, _)| i);
+                if let Some(i) = hit {
+                    remove_waypoint(s, game, i);
+                }
             }
             return;
         }
@@ -1199,9 +1316,12 @@ pub(super) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
             return;
         }
         if key == wp_key {
+            // On a waypoint: remove it. Elsewhere: ask for the new one's name.
             if let Some(p) = game.native_player() {
-                let at = (p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
-                add_waypoint(s, game, "", at, p.dimension);
+                match nearest(s, p.dimension, (p.x, p.y, p.z), 2.0) {
+                    Some(i) => remove_waypoint(s, game, i),
+                    None => s.name_prompt = true,
+                }
             }
         } else if key == in_key || key == out_key {
             let z = s.mini.zoom;
@@ -1236,9 +1356,18 @@ pub(super) fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
                 let at = (p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
                 add_waypoint(s, game, &rest, at, p.dimension);
             }
-            "del" | "remove" | "rm" => {
-                let before = s.waypoints.len();
+            "del" | "delete" | "remove" | "rm" => {
                 let n = rest.trim();
+                if n.is_empty() {
+                    // The nearest one in this dimension.
+                    let here = (p.x, p.y, p.z);
+                    match nearest(s, p.dimension, here, f64::INFINITY) {
+                        Some(i) => remove_waypoint(s, game, i),
+                        None => chat(s, game, tr(l, T::MsgNotFound)),
+                    }
+                    return;
+                }
+                let before = s.waypoints.len();
                 if let Ok(i) = n.parse::<usize>() {
                     if i >= 1 && i <= s.waypoints.len() {
                         s.waypoints.remove(i - 1);
@@ -1246,10 +1375,28 @@ pub(super) fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
                 } else {
                     s.waypoints.retain(|w| !w.name.eq_ignore_ascii_case(n));
                 }
-                let gone = (before - s.waypoints.len()).to_string();
+                let gone = before - s.waypoints.len();
+                if gone == 0 {
+                    chat(s, game, tr(l, T::MsgNotFound));
+                    return;
+                }
                 save_waypoints(s, game);
-                chat(s, game, &fill(tr(l, T::MsgDeleted), &[&gone]));
+                chat(s, game, &fill(tr(l, T::MsgDeleted), &[&gone.to_string()]));
             }
+            "rename" | "name" => {
+                let mut parts = rest.splitn(2, ' ');
+                let index = parts.next().and_then(|n| n.parse::<usize>().ok());
+                let name = clean_name(parts.next().unwrap_or(""));
+                match index.filter(|&i| i >= 1 && i <= s.waypoints.len()) {
+                    Some(i) if !name.is_empty() => {
+                        s.waypoints[i - 1].name = name.clone();
+                        save_waypoints(s, game);
+                        chat(s, game, &fill(tr(l, T::MsgRenamed), &[&name]));
+                    }
+                    _ => chat(s, game, tr(l, T::MsgHelp)),
+                }
+            }
+            "help" | "?" => chat(s, game, tr(l, T::MsgHelp)),
             "clear" => {
                 s.waypoints.clear();
                 save_waypoints(s, game);
@@ -1331,6 +1478,51 @@ fn marker(batch: &mut HudBatch, game: &Game<'_>, x: f32, y: f32, r: f32, color: 
     batch.fill_quad(atlas, [[x, y - r], [x + r, y], [x, y + r], [x - r, y]], argb(color));
 }
 
+/// The waypoints in the world: a marker and `name · 123 m` over each one
+/// on screen, projected from the last frame's camera as the locator bar
+/// does (`game/locator_bar.rs`).
+fn world_markers(s: &State, game: &Game<'_>, batch: &mut HudBatch, p: &NativePlayer) {
+    let Some((cam, yaw, pitch, fov)) = game.locator_camera else {
+        return;
+    };
+    let (w, h) = (batch.width, batch.height);
+    let (sy, cy) = f64::from(yaw.to_radians()).sin_cos();
+    let (sp, cp) = f64::from(pitch.to_radians()).sin_cos();
+    let forward = [-sy * cp, -sp, cy * cp];
+    let up = [-sy * sp, cp, cy * sp];
+    let right = [-cy, 0.0, -sy];
+    let focal = 1.0 / f64::from((fov / 2.0).to_radians()).tan();
+    let aspect = f64::from(w / h.max(1.0));
+    let atlas = &game.gui.atlas;
+    for wp in s.waypoints.iter().filter(|wp| wp.dim == p.dimension) {
+        let target = [f64::from(wp.x) + 0.5, f64::from(wp.y) + 1.0, f64::from(wp.z) + 0.5];
+        let o = [target[0] - cam[0], target[1] - cam[1], target[2] - cam[2]];
+        let dot = |a: [f64; 3]| a[0] * o[0] + a[1] * o[1] + a[2] * o[2];
+        let depth = dot(forward);
+        if depth < 0.1 {
+            continue;
+        }
+        let nx = dot(right) * focal / aspect / depth;
+        let ny = dot(up) * focal / depth;
+        if nx.abs() > 1.0 || ny.abs() > 1.0 {
+            continue;
+        }
+        let x = ((nx + 1.0) / 2.0) as f32 * w;
+        let y = ((1.0 - ny) / 2.0) as f32 * h;
+        let dist = ((target[0] - p.x).powi(2)
+            + (f64::from(wp.y) - p.y).powi(2)
+            + (target[2] - p.z).powi(2))
+        .sqrt();
+        let color = if wp.death { 0xFFAAAAAA } else { COLORS[wp.color] };
+        marker(batch, game, x, y, 3.0, color);
+        let label = format!("{} · {} m", wp.name, dist.round() as i64);
+        let tw = HudBatch::text_width(atlas, &label);
+        let (lx, ly) = ((x - tw / 2.0).round(), (y - 16.0).round());
+        batch.fill(atlas, lx - 2.0, ly - 1.0, tw + 3.0, 10.0, argb(0x60000000));
+        batch.text(atlas, &label, lx, ly, argb(color), true);
+    }
+}
+
 /// The HUD after Horizon's minimap: its info box under it, and the
 /// waypoints on it.
 pub(super) fn hud(game: &Game<'_>, batch: &mut HudBatch, corners: &mut Corners) {
@@ -1343,6 +1535,9 @@ pub(super) fn hud(game: &Game<'_>, batch: &mut HudBatch, corners: &mut Corners) 
     with(|s| {
         ensure_settings(s, game);
         let m = s.mini;
+        if m.world {
+            world_markers(s, game, batch, &p);
+        }
         let corner = CORNERS[m.corner];
         // Horizon leaves the top left corner to F3's screen.
         if game.debug && corner == Corner::TopLeft {
