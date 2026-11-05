@@ -34,12 +34,13 @@ Chat commands:
 | `/wp share <number> <player>` | Send a waypoint to one player as a private message: works on **every** server |
 | `/wp share <number>` | Send a waypoint to everyone (where map sharing is active, see below) |
 | `/wp list` | List all waypoints with their number and distance |
+| `/wp sync on` / `/wp sync off` | Share your map and new waypoints with the players on this server, or stop (off by default) |
 | `/wp clear` | Remove every waypoint of this world |
 | `/wp help` | Show these commands |
 
 ## ayynoxs world map
-- **Detailed colours:** grass, leaves and water in their biome's colours, the floor shining through shallow water,
-  smooth relief shading lit from the north-west, and cells that average their blocks when zoomed out
+- Drawn like a vanilla map item: map colours with the item's height shading, one block per cell, so it stays smooth
+  while you drag it
 - Saves every chunk you have seen, separately for each world, server, dimension and layer
   (`horizon-mods/.horizon-mod-data/ayynoxs_worldmap/`)
 - **Layers like the minimap:** under the open sky you see the surface. In a cave, under a roof or in the Nether,
@@ -60,12 +61,17 @@ Chat commands:
 ## Multiplayer: share the map with friends
 **Waypoints, on any server:** `/wp share <number> <player>` sends the waypoint as a private message (`/msg`). If
 the other player has the pack, it becomes a waypoint on their map and the message itself stays out of their chat.
-This needs nothing on the server. A player without the pack sees a line starting with `[ayynoxs-wp]`.
+This needs nothing on the server. A player without the pack sees a line starting with `[ayynoxs-wp]`. Only private
+messages to you can add waypoints: the marker in public chat does nothing.
 
-**The whole map, live:** with *Share map & waypoints in multiplayer* on (the default), players with the pack also
-share:
+**The whole map, live:** sharing is **off by default** and chosen per server. When a server can pass shares on,
+the pack says so once in chat; `/wp sync on` (or the setting *Share map & waypoints on this server*) turns it on
+for that server. Then players who turned it on share:
 - every chunk they explore, so everyone's world map fills in together, layer by layer
 - every new waypoint they set
+
+What arrives is limited: only chunks of the level you are in, within 2048 blocks of you, and at most 1000
+waypoints per world.
 
 This part works through Horizon's mod messages, so it needs something in the middle that passes them on:
 
@@ -83,7 +89,7 @@ button on either mod's settings page; both mods share the choice. The settings p
 messages switch right away. The names in the *Options > Mods* list switch after a restart.
 
 ## Install
-1. Download `ayynoxs_map_pack-0.4.1.hnmod` from the
+1. Download `ayynoxs_map_pack-0.4.2.hnmod` from the
    [releases](https://github.com/DenoxyYT/ayynoxs-map-pack/releases).
 2. Install it on the **Mods** page of the Horizon launcher.
 3. Click **Build** and confirm with "I trust these mods: build".
@@ -95,7 +101,7 @@ Native mods run as native code with your user's full permissions, so only build 
    ```powershell
    powershell -ExecutionPolicy Bypass -File pack.ps1
    ```
-   This writes `dist/ayynoxs_map_pack-0.4.1.hnmod`.
+   This writes `dist/ayynoxs_map_pack-0.4.2.hnmod`.
 2. Install that file in the launcher as above, or build straight from the source folder:
    ```powershell
    horizon-launcher native-build mixins/ayynoxs_map_pack --trust-native-code

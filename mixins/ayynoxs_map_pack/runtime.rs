@@ -11,7 +11,6 @@ use super::{
     native_hooks::{NativeMinimap, NativeMod, NativePlayer},
 };
 use horizon_client::{
-    biome::Biomes,
     blocks::{BlockFacts, Fluid, MAP_COLORS},
     chunk::{Chunk, MIN_Y, SECTIONS},
     extras::Corner,
@@ -29,7 +28,7 @@ use std::{
 
 pub(crate) const MINIMAP: &str = "ayynoxs_minimap";
 pub(crate) const WORLDMAP: &str = "ayynoxs_worldmap";
-pub(crate) const VERSION: &str = "0.4.1";
+pub(crate) const VERSION: &str = "0.4.2";
 
 const KEY_WAYPOINT: &str = "waypoint";
 const KEY_REMOVE: &str = "remove";
@@ -146,6 +145,9 @@ enum T {
     RenameTitle,
     NameHint,
     Synced,
+    AskShare,
+    SyncOn,
+    SyncOff,
 }
 
 /// `t` in language `lang` (an index of `LANGS`).
@@ -193,11 +195,11 @@ fn tr(lang: usize, t: T) -> &'static str {
         T::Grid => ["Chunk grid", "Chunk-Raster", "Grille des chunks", "Griglia dei chunk", "Сетка чанков"],
         T::MapWaypoints => ["Waypoints on the map", "Wegpunkte auf der Karte", "Points sur la carte", "Waypoint sulla mappa", "Метки на карте"],
         T::Share => [
-            "Share map & waypoints in multiplayer",
-            "Karte & Wegpunkte im Multiplayer teilen",
-            "Partager carte et points en multijoueur",
-            "Condividi mappa e waypoint in multiplayer",
-            "Делиться картой и метками в мультиплеере",
+            "Share map & waypoints on this server",
+            "Karte & Wegpunkte auf diesem Server teilen",
+            "Partager carte et points sur ce serveur",
+            "Condividi mappa e waypoint su questo server",
+            "Делиться картой и метками на этом сервере",
         ],
         T::WaypointN => ["Waypoint {0}", "Wegpunkt {0}", "Point {0}", "Waypoint {0}", "Метка {0}"],
         T::DeathPoint => ["Death point", "Todespunkt", "Point de mort", "Punto di morte", "Точка смерти"],
@@ -274,11 +276,11 @@ fn tr(lang: usize, t: T) -> &'static str {
             "Отправь её игроку: /wp share <№> <игрок> — работает на любом сервере.",
         ],
         T::MsgHelp => [
-            "B: set or rename a waypoint (a window asks the name) · Backspace: remove the one you aim at · /wp add <name> · /wp del [name|nr] · /wp rename <nr> <name> · /wp share <nr> [player] · /wp list · /wp clear",
-            "B: Wegpunkt setzen oder umbenennen (ein Fenster fragt den Namen) · Rücktaste: anvisierten löschen · /wp add <Name> · /wp del [Name|Nr] · /wp rename <Nr> <Name> · /wp share <Nr> [Spieler] · /wp list · /wp clear",
-            "B : placer ou renommer un point (une fenêtre demande le nom) · Retour arrière : supprimer celui visé · /wp add <nom> · /wp del [nom|n°] · /wp rename <n°> <nom> · /wp share <n°> [joueur] · /wp list · /wp clear",
-            "B: imposta o rinomina un waypoint (una finestra chiede il nome) · Backspace: elimina quello mirato · /wp add <nome> · /wp del [nome|nr] · /wp rename <nr> <nome> · /wp share <nr> [giocatore] · /wp list · /wp clear",
-            "B: поставить или переименовать метку (окно спросит имя) · Backspace: удалить метку в прицеле · /wp add <имя> · /wp del [имя|№] · /wp rename <№> <имя> · /wp share <№> [игрок] · /wp list · /wp clear",
+            "B: set or rename a waypoint (a window asks the name) · Backspace: remove the one you aim at · /wp add <name> · /wp del [name|nr] · /wp rename <nr> <name> · /wp share <nr> [player] · /wp list · /wp sync on|off · /wp clear",
+            "B: Wegpunkt setzen oder umbenennen (ein Fenster fragt den Namen) · Rücktaste: anvisierten löschen · /wp add <Name> · /wp del [Name|Nr] · /wp rename <Nr> <Name> · /wp share <Nr> [Spieler] · /wp list · /wp sync on|off · /wp clear",
+            "B : placer ou renommer un point (une fenêtre demande le nom) · Retour arrière : supprimer celui visé · /wp add <nom> · /wp del [nom|n°] · /wp rename <n°> <nom> · /wp share <n°> [joueur] · /wp list · /wp sync on|off · /wp clear",
+            "B: imposta o rinomina un waypoint (una finestra chiede il nome) · Backspace: elimina quello mirato · /wp add <nome> · /wp del [nome|nr] · /wp rename <nr> <nome> · /wp share <nr> [giocatore] · /wp list · /wp sync on|off · /wp clear",
+            "B: поставить или переименовать метку (окно спросит имя) · Backspace: удалить метку в прицеле · /wp add <имя> · /wp del [имя|№] · /wp rename <№> <имя> · /wp share <№> [игрок] · /wp list · /wp sync on|off · /wp clear",
         ],
         T::OtherDim => ["other dimension", "andere Dimension", "autre dimension", "altra dimensione", "другое измерение"],
         T::South => ["South", "Süden", "Sud", "Sud", "Юг"],
@@ -313,6 +315,27 @@ fn tr(lang: usize, t: T) -> &'static str {
             "Enter: сохранить · Esc: отмена",
         ],
         T::Synced => ["shared", "geteilt", "partagée", "condivisa", "общая"],
+        T::AskShare => [
+            "Players here can share their maps. Yours stays private unless you type §e/wp sync on§r (your explored map and new waypoints then go to everyone here).",
+            "Hier können Spieler ihre Karten teilen. Deine bleibt privat, außer du tippst §e/wp sync on§r (dann gehen deine erkundete Karte und neue Wegpunkte an alle hier).",
+            "Ici, les joueurs peuvent partager leurs cartes. La tienne reste privée sauf si tu tapes §e/wp sync on§r (ta carte explorée et tes nouveaux points iront alors à tout le monde ici).",
+            "Qui i giocatori possono condividere le mappe. La tua resta privata, a meno che tu non scriva §e/wp sync on§r (la mappa esplorata e i nuovi waypoint andranno a tutti qui).",
+            "Здесь игроки могут делиться картами. Твоя остаётся личной, пока не введёшь §e/wp sync on§r (тогда исследованная карта и новые метки уйдут всем здесь).",
+        ],
+        T::SyncOn => [
+            "Sharing is on for this server: your explored map and new waypoints go to the other players here.",
+            "Teilen ist für diesen Server an: deine erkundete Karte und neue Wegpunkte gehen an die anderen Spieler hier.",
+            "Partage activé pour ce serveur : ta carte explorée et tes nouveaux points vont aux autres joueurs ici.",
+            "Condivisione attiva per questo server: la mappa esplorata e i nuovi waypoint vanno agli altri giocatori qui.",
+            "Обмен включён для этого сервера: исследованная карта и новые метки уходят другим игрокам здесь.",
+        ],
+        T::SyncOff => [
+            "Sharing is off for this server: your map and waypoints stay private.",
+            "Teilen ist für diesen Server aus: deine Karte und Wegpunkte bleiben privat.",
+            "Partage désactivé pour ce serveur : ta carte et tes points restent privés.",
+            "Condivisione disattivata per questo server: mappa e waypoint restano privati.",
+            "Обмен выключен для этого сервера: карта и метки остаются личными.",
+        ],
     };
     row[lang.min(LANGS.len() - 1)]
 }
@@ -368,7 +391,7 @@ impl Default for MapSettings {
             explore: true,
             grid: false,
             waypoints: true,
-            share: true,
+            share: false,
         }
     }
 }
@@ -386,8 +409,8 @@ struct Waypoint {
 
 /// What `depth` holds for a wall the cave map cuts through.
 const WALL_DEPTH: u8 = 255;
-/// One chunk of the map: per column its colour (biome-tinted, water over
-/// its floor; all zero is unknown), height and water depth.
+/// One chunk of the map: per column its colour as the map item shades it
+/// (all zero is unknown), height and water depth.
 #[derive(Clone)]
 struct Tile {
     rgb: [u8; 768],
@@ -438,30 +461,23 @@ impl Region {
     }
 }
 
-/// What a scan needs of each block state: map colour, flags and tint.
+/// What a scan needs of each block state: map colour and flags.
 struct Palette {
     color: Vec<u8>,
     flags: Vec<u8>,
-    tint: Vec<u8>,
 }
 const WATER_FLAG: u8 = 1;
 const LAVA_FLAG: u8 = 2;
 const FLUID: u8 = 3;
 const AIR: u8 = 4;
 const STURDY_TOP: u8 = 8;
-/// `MapColor.WATER`.
+/// `MapColor.WATER`, `FIRE`.
 const WATER: u8 = 12;
 const LAVA: u8 = 4;
-const TINT_NONE: u8 = 0;
-const TINT_GRASS: u8 = 1;
-const TINT_FOLIAGE: u8 = 2;
-const TINT_WATER: u8 = 3;
-const TINT_SPRUCE: u8 = 4;
-const TINT_BIRCH: u8 = 5;
 impl Palette {
     fn new(facts: &BlockFacts) -> Self {
-        let n = facts.states.len();
-        let (mut color, mut flags, mut tint) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::with_capacity(n));
+        let mut color = Vec::with_capacity(facts.states.len());
+        let mut flags = Vec::with_capacity(facts.states.len());
         for f in &facts.states {
             color.push(f.map_color);
             let mut b = match f.fluid {
@@ -469,28 +485,18 @@ impl Palette {
                 Fluid::Water => WATER_FLAG,
                 Fluid::Lava => LAVA_FLAG,
             };
-            let name: &str = &f.name;
-            if matches!(name, "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air") {
+            if matches!(
+                &*f.name,
+                "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+            ) {
                 b |= AIR;
             }
             if f.sturdy_full >> 1 & 1 != 0 {
                 b |= STURDY_TOP;
             }
             flags.push(b);
-            // The blocks the game tints by biome (`BlockColors`).
-            let t = match name {
-                "minecraft:grass_block" | "minecraft:short_grass" | "minecraft:tall_grass"
-                | "minecraft:fern" | "minecraft:large_fern" | "minecraft:sugar_cane" => TINT_GRASS,
-                "minecraft:spruce_leaves" => TINT_SPRUCE,
-                "minecraft:birch_leaves" => TINT_BIRCH,
-                "minecraft:oak_leaves" | "minecraft:jungle_leaves" | "minecraft:acacia_leaves"
-                | "minecraft:dark_oak_leaves" | "minecraft:mangrove_leaves" | "minecraft:vine" => TINT_FOLIAGE,
-                "minecraft:water" | "minecraft:bubble_column" => TINT_WATER,
-                _ => TINT_NONE,
-            };
-            tint.push(t);
         }
-        Self { color, flags, tint }
+        Self { color, flags }
     }
     #[inline]
     fn get(&self, id: u32) -> (u8, u8) {
@@ -499,10 +505,6 @@ impl Palette {
             self.color.get(i).copied().unwrap_or(0),
             self.flags.get(i).copied().unwrap_or(AIR),
         )
-    }
-    #[inline]
-    fn tint(&self, id: u32) -> u8 {
-        self.tint.get(id as usize).copied().unwrap_or(TINT_NONE)
     }
 }
 
@@ -614,6 +616,8 @@ struct State {
     open_dialog: bool,
     dialog: Option<NameDialog>,
     dialog_end: Option<DialogEnd>,
+    /// This server was told once that its players can share maps.
+    asked: bool,
     /// The scan's palette, for the world's block states.
     palette: Option<Palette>,
     explorer: Explorer,
@@ -638,6 +642,7 @@ impl Default for State {
             open_dialog: false,
             dialog: None,
             dialog_end: None,
+            asked: false,
             palette: None,
             explorer: Explorer::default(),
             screen: None,
@@ -685,7 +690,8 @@ fn load_settings(s: &mut State, game: &Game<'_>) {
         explore: flag(game, WORLDMAP, "explore", m.explore),
         grid: flag(game, WORLDMAP, "grid", m.grid),
         waypoints: flag(game, WORLDMAP, "waypoints", m.waypoints),
-        share: flag(game, WORLDMAP, "share", m.share),
+        // Chosen per server (`switch_place`), never shared by default.
+        share: false,
     };
     s.loaded = true;
 }
@@ -715,9 +721,13 @@ fn store_settings(s: &State, game: &Game<'_>) {
         ("explore", w.explore),
         ("grid", w.grid),
         ("waypoints", w.waypoints),
-        ("share", w.share),
     ] {
         game.native_set_setting(WORLDMAP, k, &v.to_string());
+    }
+    // Sharing is the current server's own choice.
+    if let Some(place) = &s.place {
+        let key = format!("share.{}", place.world);
+        game.native_set_setting(WORLDMAP, &key, &w.share.to_string());
     }
 }
 fn on_off(lang: usize, b: bool) -> &'static str {
@@ -1089,21 +1099,11 @@ impl Explorer {
         let rgb = [t.rgb[i * 3], t.rgb[i * 3 + 1], t.rgb[i * 3 + 2]];
         (rgb != [0, 0, 0]).then_some((rgb, t.height[i], t.depth[i]))
     }
-    /// A column as the map shows it: lit from the north-west by the slope
-    /// to its neighbours, walls darkened. 0 for unknown.
+    /// A column's colour as the map shows it (shaded when it was scanned).
+    #[inline]
     fn shaded(&self, x: i32, z: i32) -> Option<[f32; 3]> {
-        let (rgb, h, depth) = self.column(x, z)?;
-        let f = if depth == WALL_DEPTH {
-            0.5
-        } else if depth > 0 {
-            1.0
-        } else {
-            let hn = self.column(x, z - 1).map_or(h, |c| c.1);
-            let hw = self.column(x - 1, z).map_or(h, |c| c.1);
-            let diff = f32::from(h - hn) + f32::from(h - hw);
-            1.0 + (diff * 0.07).clamp(-0.32, 0.22)
-        };
-        Some([f32::from(rgb[0]) * f, f32::from(rgb[1]) * f, f32::from(rgb[2]) * f])
+        let (rgb, _, _) = self.column(x, z)?;
+        Some([f32::from(rgb[0]), f32::from(rgb[1]), f32::from(rgb[2])])
     }
 }
 
@@ -1137,6 +1137,8 @@ fn switch_place(s: &mut State, game: &Game<'_>, now: Option<Place>) {
         s.explorer.dir = Some(place_dir(game, place));
         if !same_world {
             s.waypoints = load_waypoints(game, &place.world);
+            s.map.share = flag(game, WORLDMAP, &format!("share.{}", place.world), false);
+            s.asked = flag(game, WORLDMAP, &format!("asked.{}", place.world), false);
         }
     } else {
         s.waypoints.clear();
@@ -1177,110 +1179,113 @@ fn top_of(chunk: &Chunk, air: u32) -> i32 {
         .find(|&s| chunk.sections.get(s).is_some_and(|sec| !sec.is_uniform(air)))
         .map_or(MIN_Y - 1, |s| MIN_Y + s as i32 * 16 + 15)
 }
-fn rgb_of(c: u32) -> [f32; 3] {
-    [(c >> 16 & 255) as f32, (c >> 8 & 255) as f32, (c & 255) as f32]
+/// `MapColor.getColorFromPackedId` as RGB; never all zero (unknown).
+fn packed_rgb(id: u8, brightness: u8) -> [u8; 3] {
+    let col = MAP_COLORS[usize::from(id)];
+    let m = [180u32, 220, 255, 135][usize::from(brightness & 3)];
+    let ch = |s: u32| ((col >> s & 255) * m / 255) as u8;
+    let out = [ch(16), ch(8), ch(0)];
+    if out == [0, 0, 0] { [1, 1, 1] } else { out }
 }
-/// A block's colour on the map: its map colour, or the biome's grass,
-/// foliage or water colour for the blocks the game tints.
-fn block_rgb(p: &Palette, biomes: &Biomes, state: u32, biome: u16, x: i32, z: i32) -> Option<[f32; 3]> {
-    let (id, _) = p.get(state);
-    let scale = |c: [f32; 3], k: f32| [c[0] * k, c[1] * k, c[2] * k];
-    match p.tint(state) {
-        TINT_GRASS => Some(scale(rgb_of(biomes.grass(biome, f64::from(x), f64::from(z))), 0.92)),
-        TINT_FOLIAGE => Some(scale(rgb_of(biomes.get(biome).foliage), 0.78)),
-        TINT_SPRUCE => Some(scale(rgb_of(0x61_9961), 0.78)),
-        TINT_BIRCH => Some(scale(rgb_of(0x80_A755), 0.82)),
-        TINT_WATER => Some(rgb_of(biomes.get(biome).water)),
-        _ => {
-            let id = usize::from(id);
-            (id != 0 && id < MAP_COLORS.len()).then(|| rgb_of(MAP_COLORS[id]))
-        }
-    }
-}
-/// One column: the first block with a map colour going down. Water shows
-/// its floor through it, more faintly the deeper it is. With a cave `cut`,
-/// a solid block at that height is a wall and the floor below it is
-/// scanned, as Horizon's minimap does (`minimap::scan_column`).
-fn scan_column(
-    chunk: &Chunk,
-    p: &Palette,
-    biomes: &Biomes,
-    (x, z): (i32, i32),
-    top: i32,
-    cut: Option<i32>,
-) -> Option<([u8; 3], i16, u8)> {
-    let (wx, wz) = (chunk.x * 16 + x, chunk.z * 16 + z);
+/// One column as `MapItem.update` sees it: the first block with a map
+/// colour going down, a fluid's colour unless the block is sturdy on top,
+/// and the fluid's depth. With a cave `cut`, a solid block at that height
+/// is a wall (true) and the floor below it is scanned, as Horizon's minimap
+/// does (`minimap::scan_column`).
+fn scan_column(chunk: &Chunk, p: &Palette, x: i32, z: i32, top: i32, cut: Option<i32>) -> (u8, i16, u8, bool) {
     let mut y = top;
     if let Some(head) = cut {
-        let state = chunk.get(x, head, z);
-        let (color, flags) = p.get(state);
+        let (color, flags) = p.get(chunk.get(x, head, z));
         if flags & AIR == 0 && color != 0 && flags & FLUID == 0 {
-            let rgb = block_rgb(p, biomes, state, chunk.biome(wx, head, wz), wx, wz)?;
-            return Some((to_u8(rgb), head as i16, WALL_DEPTH));
+            return (color, head as i16, 0, true);
         }
         y = top.min(head);
     }
     while y > MIN_Y {
-        let state = chunk.get(x, y, z);
-        let (color, flags) = p.get(state);
+        let (mut color, flags) = p.get(chunk.get(x, y, z));
         if color == 0 {
             y -= 1;
             continue;
         }
+        let mut depth = 0u8;
         let fluid = flags & FLUID;
-        if fluid == 0 || flags & STURDY_TOP != 0 {
-            let rgb = block_rgb(p, biomes, state, chunk.biome(wx, y, wz), wx, wz)?;
-            return Some((to_u8(rgb), y as i16, 0));
-        }
-        if fluid == LAVA_FLAG {
-            return Some((to_u8(rgb_of(MAP_COLORS[usize::from(LAVA)])), y as i16, 0));
-        }
-        // Water: its colour over the floor's.
-        let water = block_rgb(p, biomes, state, chunk.biome(wx, y, wz), wx, wz)
-            .unwrap_or_else(|| rgb_of(MAP_COLORS[usize::from(WATER)]));
-        let mut below = y - 1;
-        let mut depth = 1u8;
-        while below > MIN_Y && p.get(chunk.get(x, below, z)).1 & FLUID != 0 {
+        if fluid != 0 {
+            let mut below = y - 1;
+            while below > MIN_Y && p.get(chunk.get(x, below, z)).1 & FLUID != 0 {
+                depth = depth.saturating_add(1);
+                below -= 1;
+            }
             depth = depth.saturating_add(1);
-            below -= 1;
+            if flags & STURDY_TOP == 0 {
+                color = if fluid == LAVA_FLAG { LAVA } else { WATER };
+            }
         }
-        let floor_state = chunk.get(x, below, z);
-        let floor = block_rgb(p, biomes, floor_state, chunk.biome(wx, below, wz), wx, wz).unwrap_or(water);
-        let a = (0.55 + f32::from(depth) * 0.05).min(0.92);
-        let mixed = [
-            water[0] * a + floor[0] * (1.0 - a),
-            water[1] * a + floor[1] * (1.0 - a),
-            water[2] * a + floor[2] * (1.0 - a),
-        ];
-        return Some((to_u8(mixed), y as i16, depth.min(WALL_DEPTH - 1)));
+        return (color, y as i16, depth, false);
     }
-    None
+    (0, MIN_Y as i16, 0, false)
 }
-fn to_u8(c: [f32; 3]) -> [u8; 3] {
-    // Never all zero: that is "unknown".
-    let v = |f: f32| f.round().clamp(0.0, 255.0) as u8;
-    let out = [v(c[0]), v(c[1]), v(c[2])];
-    if out == [0, 0, 0] { [1, 1, 1] } else { out }
+/// The map item's shading: lighter facing a lower north neighbour, darker
+/// facing a higher one, dithered; water by depth; walls darkest.
+fn brightness(color: u8, height: i16, north: i16, depth: u8, parity: i32, wall: bool) -> u8 {
+    if wall {
+        return 3;
+    }
+    let parity = f64::from(parity & 1);
+    if color == WATER {
+        let diff = f64::from(depth) * 0.1 + parity * 0.2;
+        return if diff < 0.5 { 2 } else if diff > 0.9 { 0 } else { 1 };
+    }
+    let diff = f64::from(height - north) * 4.0 / 5.0 + (parity - 0.5) * 0.4;
+    if diff > 0.6 {
+        2
+    } else if diff < -0.6 {
+        0
+    } else {
+        1
+    }
 }
-fn scan_tile(chunk: &Chunk, p: &Palette, biomes: &Biomes, air: u32, cut: Option<i32>) -> Option<Tile> {
+fn scan_tile(chunk: &Chunk, p: &Palette, air: u32, cut: Option<i32>, north: Option<&Tile>) -> Option<Tile> {
     let top = top_of(chunk, air);
     if top < MIN_Y {
         return None;
     }
+    let mut ids = [0u8; 256];
+    let mut walls = [false; 256];
     let mut tile = Tile::empty();
     let mut any = false;
     for z in 0..16 {
         for x in 0..16 {
+            let (c, h, d, wall) = scan_column(chunk, p, x, z, top, cut);
             let i = (z * 16 + x) as usize;
-            if let Some((rgb, h, d)) = scan_column(chunk, p, biomes, (x, z), top, cut) {
-                tile.rgb[i * 3..i * 3 + 3].copy_from_slice(&rgb);
-                tile.height[i] = h;
-                tile.depth[i] = d;
-                any = true;
-            }
+            ids[i] = c;
+            tile.height[i] = h;
+            tile.depth[i] = if wall { WALL_DEPTH } else { d.min(WALL_DEPTH - 1) };
+            walls[i] = wall;
+            any |= c != 0;
         }
     }
-    any.then_some(tile)
+    if !any {
+        return None;
+    }
+    for z in 0..16i32 {
+        for x in 0..16i32 {
+            let i = (z * 16 + x) as usize;
+            let id = ids[i];
+            if id == 0 || usize::from(id) >= MAP_COLORS.len() {
+                continue;
+            }
+            let h = tile.height[i];
+            let n = if z > 0 {
+                tile.height[i - 16]
+            } else {
+                north.map_or(h, |t| t.height[(15 * 16 + x) as usize])
+            };
+            let parity = chunk.x * 16 + x + chunk.z * 16 + z;
+            let b = brightness(id, h, n, tile.depth[i], parity, walls[i]);
+            tile.rgb[i * 3..i * 3 + 3].copy_from_slice(&packed_rgb(id, b));
+        }
+    }
+    Some(tile)
 }
 fn explore(s: &mut State, game: &Game<'_>, px: f64, pz: f64) {
     let cut = s.cut;
@@ -1290,7 +1295,6 @@ fn explore(s: &mut State, game: &Game<'_>, px: f64, pz: f64) {
         return;
     }
     let palette = s.palette.get_or_insert_with(|| Palette::new(game.res.facts()));
-    let biomes = game.res.biomes().clone();
     let world = &game.world;
     let air = world.air.0;
     let (ccx, ccz) = ((px.floor() as i32) >> 4, (pz.floor() as i32) >> 4);
@@ -1322,7 +1326,9 @@ fn explore(s: &mut State, game: &Game<'_>, px: f64, pz: f64) {
                     continue;
                 }
                 e.scanned.insert(key, (ptr, world.revision, Instant::now()));
-                let Some(tile) = scan_tile(chunk, palette, &biomes, air, cut) else {
+                e.load((key.0 >> 5, (key.1 - 1) >> 5));
+                let north = e.tile(key.0, key.1 - 1);
+                let Some(tile) = scan_tile(chunk, palette, air, cut, north) else {
                     continue;
                 };
                 if e.put(key, tile) && share && !e.outbox.contains(&key) {
@@ -1353,6 +1359,11 @@ const MSG_TILES: u8 = 0x20;
 const TILES_PER_MESSAGE: usize = 18;
 /// Messages a client sends a frame at most.
 const SEND_PER_FRAME: usize = 2;
+/// Others' chunks are taken only this many chunks around the player (2048
+/// blocks), so nobody can make a player's game write files far away.
+const SHARE_RADIUS: i32 = 128;
+/// Waypoints a world holds before shared ones stop arriving.
+const MAX_WAYPOINTS: usize = 1000;
 
 #[derive(Default)]
 struct SyncState {
@@ -1457,6 +1468,15 @@ fn sync_frame(s: &mut State, game: &mut Game<'_>) {
             s.sync.hellos += 1;
         }
     }
+    // A relay answered while sharing is off: say once, per server, how to
+    // turn it on.
+    if s.sync.ready && !s.map.share && !s.asked {
+        s.asked = true;
+        if let Some(place) = &s.place {
+            game.native_set_setting(WORLDMAP, &format!("asked.{}", place.world), "true");
+        }
+        chat(s, game, tr(s.lang, T::AskShare));
+    }
     if !s.sync.ready || !s.map.share {
         s.sync.out.clear();
         s.explorer.outbox.clear();
@@ -1498,7 +1518,8 @@ fn receive(s: &mut State, game: &mut Game<'_>, data: &[u8]) {
     let mut r = Reader(data);
     match r.u8() {
         Some(MSG_WELCOME) => s.sync.ready = true,
-        Some(MSG_WAYPOINT) => {
+        // Shares from others only while sharing is on here.
+        Some(MSG_WAYPOINT) if s.map.share && s.waypoints.len() < MAX_WAYPOINTS => {
             let (Some(name), Some(x), Some(y), Some(z), Some(dim), Some(color)) =
                 (r.str(), r.i32(), r.i32(), r.i32(), r.str(), r.u8())
             else {
@@ -1522,10 +1543,21 @@ fn receive(s: &mut State, game: &mut Game<'_>, data: &[u8]) {
             });
             save_waypoints(s, game);
         }
-        Some(MSG_TILES) => {
+        Some(MSG_TILES) if s.map.share => {
             let (Some(dim), Some(layer), Some(count)) = (r.str(), r.i32(), r.u8()) else {
                 return;
             };
+            // Only what can be seen from here: the player's own level, a
+            // real layer, a message's worth, near the player.
+            let here = s.place.as_ref().is_some_and(|pl| pl.dim == dim);
+            let band_ok = layer == i32::MIN || (MIN_Y.div_euclid(BAND)..=(320 / BAND)).contains(&layer);
+            let Some(p) = game.native_player() else {
+                return;
+            };
+            if !here || !band_ok || usize::from(count) > TILES_PER_MESSAGE {
+                return;
+            }
+            let (pcx, pcz) = ((p.x.floor() as i32) >> 4, (p.z.floor() as i32) >> 4);
             let layer = Layer::from_wire(layer);
             let mut tiles = Vec::new();
             for _ in 0..count {
@@ -1535,7 +1567,9 @@ fn receive(s: &mut State, game: &mut Game<'_>, data: &[u8]) {
                 let Some(t) = r.bytes(Tile::BYTES).and_then(Tile::read) else {
                     return;
                 };
-                tiles.push(((cx, cz), t));
+                if (cx - pcx).abs() <= SHARE_RADIUS && (cz - pcz).abs() <= SHARE_RADIUS {
+                    tiles.push(((cx, cz), t));
+                }
             }
             merge_tiles(s, game, &dim, layer, tiles);
         }
@@ -1547,7 +1581,7 @@ fn receive(s: &mut State, game: &mut Game<'_>, data: &[u8]) {
 /// <player>`): `x y z colour level name`. The sender's own echo of it finds
 /// the waypoint already there and adds nothing.
 fn chat_waypoint(s: &mut State, game: &mut Game<'_>, line: &str) {
-    if !s.map.share {
+    if s.waypoints.len() >= MAX_WAYPOINTS {
         return;
     }
     let mut parts = line.split_whitespace();
@@ -2103,6 +2137,15 @@ pub(super) fn command(game: &mut Game<'_>, command: &str, ran: &mut bool) {
                     _ => chat(s, game, tr(l, T::MsgNoSync)),
                 }
             }
+            "sync" => {
+                match rest.trim() {
+                    "on" => s.map.share = true,
+                    "off" => s.map.share = false,
+                    _ => {}
+                }
+                store_settings(s, game);
+                chat(s, game, tr(l, if s.map.share { T::SyncOn } else { T::SyncOff }));
+            }
             "help" | "?" => chat(s, game, tr(l, T::MsgHelp)),
             "clear" => {
                 s.waypoints.clear();
@@ -2347,8 +2390,8 @@ fn dim_name(lang: usize, dim: &str) -> String {
     }
 }
 
-/// The map's cells for a view: each the average of up to 3 x 3 blocks
-/// under it, shaded, as HUD colours (0 unknown). Recomputed only when the
+/// The map's cells for a view: the block under each, as HUD colours (0
+/// unknown). Recomputed only when the
 /// view or a tile changed.
 fn map_cells(e: &Explorer, cache: &mut MapCache, view: (f64, f64, f32), cols: i32, rows: i32, step: f64) -> Vec<u32> {
     let (left, top, zoom) = view;
@@ -2356,7 +2399,8 @@ fn map_cells(e: &Explorer, cache: &mut MapCache, view: (f64, f64, f32), cols: i3
     if cache.key == Some(key) {
         return cache.cells.clone();
     }
-    let k = (step.round() as i32).clamp(1, 3);
+    // One block a cell, as the map item draws: cheap while dragging.
+    let k = 1;
     let mut cells = Vec::with_capacity((cols * rows) as usize);
     for j in 0..rows {
         for i in 0..cols {
@@ -2379,7 +2423,7 @@ fn map_cells(e: &Explorer, cache: &mut MapCache, view: (f64, f64, f32), cols: i3
                 0
             } else {
                 // A few low bits off, so flat ground draws as long runs.
-                let q = |v: f32| ((v / n).round().clamp(0.0, 255.0) as u8) & 0xFC;
+                let q = |v: f32| (v / n).round().clamp(0.0, 255.0) as u8;
                 rgba(q(sum[0]), q(sum[1]), q(sum[2]), 255)
             });
         }
